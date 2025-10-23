@@ -1,5 +1,7 @@
 # TAF - Travail À Faire
 
+[![Gem Version](https://badge.fury.io/rb/taf-cli.svg?icon=si%3Arubygems)](https://badge.fury.io/rb/taf-cli)
+
 A simple CLI todo list manager written in Ruby.
 
 `taf` is a lightweight command-line tool that helps you manage your todos in a markdown file. It supports hierarchical task organization with tags, parent-child relationships, and various management commands.
