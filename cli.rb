@@ -40,7 +40,7 @@ class CLI
       opts.banner = "Usage: taf [options] [message]"
       opts.separator "Options:"
 
-      opts.on("-f FILE", "--file FILE", "Required, path to the taf markdown file") do |file|
+      opts.on("-f FILE", "--file FILE", "Path to the taf markdown file (default: ~/taf.md)") do |file|
         @file = file
       end
 
@@ -82,12 +82,8 @@ class CLI
   end
 
   def validate_options
-    unless @mode == :help || @file
-      # All modes but help require a file
-      puts "A file must be specified".red
-      puts "See taf --help".red
-      exit 1
-    end
+    # Set default file if not specified
+    @file ||= File.expand_path("~/taf.md") unless @mode == :help
 
     @taf = Taf.new(@file) if @file
   end
