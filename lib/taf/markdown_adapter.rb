@@ -1,6 +1,6 @@
 module MarkdownAdapter
   require_relative 'taf_helper'
-  require_relative '../models/todo'
+  require_relative 'models/todo'
 
   # Markdown format constants
   TAG_PREFIX = "#".freeze

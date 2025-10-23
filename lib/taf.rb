@@ -1,0 +1,8 @@
+require_relative 'taf/version'
+require_relative 'taf/ansi_colors'
+require_relative 'taf/taf_helper'
+require_relative 'taf/models/todo'
+require_relative 'taf/markdown_adapter'
+require_relative 'taf/terminal_presenter'
+require_relative 'taf/models/taf'
+require_relative 'taf/cli'

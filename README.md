@@ -15,10 +15,37 @@ A simple CLI todo list manager written in Ruby.
 
 ## Installation
 
-Ensure you have Ruby installed, then make the script executable:
+### Prerequisites
+
+Ensure you have Ruby 2.6 or later installed:
 
 ```bash
-chmod +x taf
+ruby --version
+```
+
+### Install from RubyGems
+
+```bash
+gem install taf-cli
+```
+
+This installs the `taf` command.
+
+### Verify Installation
+
+```bash
+taf --help
+```
+
+### Install from Source (Alternative)
+
+If you want to install from source:
+
+```bash
+git clone https://github.com/jmoniatte/taf.git
+cd taf
+gem build taf.gemspec
+gem install ./taf-cli-1.0.0.gem
 ```
 
 ## Usage

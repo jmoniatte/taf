@@ -1,7 +1,7 @@
 require 'optparse'
 require_relative 'models/taf'
-require_relative 'lib/ansi_colors'
-require_relative 'lib/taf_helper'
+require_relative 'ansi_colors'
+require_relative 'taf_helper'
 
 # Handles CLI argument parsing and command execution
 class CLI

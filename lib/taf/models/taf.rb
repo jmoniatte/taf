@@ -1,7 +1,7 @@
 require 'fileutils'
-require_relative '../lib/markdown_adapter'
-require_relative '../lib/taf_helper'
-require_relative '../lib/terminal_presenter'
+require_relative '../markdown_adapter'
+require_relative '../taf_helper'
+require_relative '../terminal_presenter'
 require_relative 'todo'
 
 class Taf

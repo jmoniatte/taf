@@ -1,5 +1,5 @@
 #!/usr/bin/env ruby
 
-require_relative 'cli'
+require_relative '../lib/taf'
 
 CLI.new(ARGV).run

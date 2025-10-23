@@ -1,0 +1,52 @@
+# Gem build artifacts
+*.gem
+*.rbc
+pkg/
+
+# Bundler
+.bundle/
+vendor/bundle/
+Gemfile.lock
+
+# Backup files created by taf
+*.backup
+
+# Test files
+/tmp/
+/test.md
+/test.md.backup
+
+# Ruby version managers
+.ruby-version
+.ruby-gemset
+
+# OS files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Editor/IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.settings/
+
+# Documentation
+/doc/
+.yardoc
+
+# Coverage reports
+/coverage/
+
+# RSpec
+/spec/reports/
+
+# Local development
+.claude/
