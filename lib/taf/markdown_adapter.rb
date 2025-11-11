@@ -6,7 +6,7 @@ module MarkdownAdapter
   TAG_PREFIX = "#".freeze
   TODO_PREFIX = "- [ ]".freeze
   DONE_PREFIX = "- [x]".freeze
-  INDENT_SIZE = 2  # Number of spaces per indent level
+  INDENT_SIZE = 2 # Number of spaces per indent level
 
   # Reads markdown and returns data as a tree structure
   def self.read(file)
@@ -26,7 +26,7 @@ module MarkdownAdapter
         if row.start_with?("#{TAG_PREFIX} ")
           tag = row.delete_prefix("#{TAG_PREFIX} ")
           data[tag] ||= []
-          stack = []  # Reset stack for new tag
+          stack = [] # Reset stack for new tag
         elsif tag.nil?
           next
         else
