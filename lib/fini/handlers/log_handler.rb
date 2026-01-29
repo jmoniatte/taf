@@ -72,7 +72,7 @@ module Fini
     end
 
     def self.reprocess
-      Log.all.each(&:reprocess)
+      Log.each(&:reprocess)
     end
   end
 end
