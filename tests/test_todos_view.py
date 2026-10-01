@@ -39,7 +39,7 @@ class TodosViewTest(unittest.TestCase):
                 path = Path(tmp) / "fini.sqlite3"
                 self.db = open_database(path)
                 self.made = [create_todo(self.db, content) for content in todos]
-                app = FiniApp(Config(theme="onedark", database_path=path))
+                app = FiniApp(Config(theme="onedark", database_path=path, path=Path(tmp) / "config.yml"))
                 async with app.run_test(size=(110, 24)) as pilot:
                     await pilot.pause()
                     await body(app, pilot)
@@ -344,7 +344,7 @@ class TodosViewTest(unittest.TestCase):
             await pilot.press("tab")
             await pilot.pause()
             self.assertFalse(close_button.display or edit_button.display)
-            await pilot.press("tab")
+            await pilot.press("tab", "tab")
             await pilot.pause()
             self.assertTrue(detail.display and close_button.display and edit_button.display)
 

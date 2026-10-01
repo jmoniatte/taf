@@ -5,7 +5,7 @@ import unittest
 from datetime import date, timedelta
 from pathlib import Path
 
-from textual.widgets import Static, TabbedContent
+from textual.widgets import Select, Static, TabbedContent
 from tui_kit.help_screen import HelpScreen
 from tui_kit.theme import list_themes, load_palette
 
@@ -13,7 +13,8 @@ from fini.app import TABS, FiniApp, FooterMessage, load_stylesheet
 from fini.config import Config
 from fini.database import open_database
 from fini.todos import create_todo
-from fini.widgets import LogsScroll, TodosTable
+from fini.widgets.stats_view import ALL_ACTIONS
+from fini.widgets import LogsScroll, StatsScroll, StatsView, TodosTable
 
 # The Logs tab shows the last 7 days, so the logs are dated from today
 TODAY = date.today()
@@ -36,6 +37,7 @@ class AppTest(unittest.TestCase):
             with tempfile.TemporaryDirectory() as tmp:
                 # Never the user's database
                 config.database_path = Path(tmp) / "fini.sqlite3"
+                config.path = Path(tmp) / "config.yml"
                 with open_database(config.database_path) as database:
                     database.executemany(
                         "INSERT INTO logs (message, logged_at, text, action, context, duration, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
@@ -55,7 +57,7 @@ class AppTest(unittest.TestCase):
             # No title bar
             self.assertFalse(app.query("#app-header"))
             self.assertEqual(tabs.region.y, 0)
-            self.assertEqual([str(tabs.get_tab(f"{name}-tab").label) for name in TABS], ["Todos", "Logs"])
+            self.assertEqual([str(tabs.get_tab(f"{name}-tab").label) for name in TABS], ["Todos", "Logs", "Stats"])
             self.assertEqual((app.tab, tabs.active), ("todos", "todos-tab"))
             self.assertFalse(app.tabs.can_focus)
             await pilot.press("tab")
@@ -63,7 +65,7 @@ class AppTest(unittest.TestCase):
             self.assertEqual((app.tab, tabs.active), ("logs", "logs-tab"))
             # The list takes focus for its keys
             self.assertIsInstance(app.focused, LogsScroll)
-            await pilot.press("tab")
+            await pilot.press("tab", "tab")
             await pilot.pause()
             self.assertEqual(app.tab, "todos")
             self.assertIsInstance(app.focused, TodosTable)
@@ -178,8 +180,57 @@ class AppTest(unittest.TestCase):
             await pilot.click("#btn-help")
             await pilot.pause()
             self.assertIn("LOGS", [str(title.render()) for title in app.screen.query(".section-title")])
+            await pilot.press("escape", "tab")
+            await pilot.pause()
+            self.assertEqual(await help_keys(app, pilot), {"GENERAL": general, "STATS": ["j", "k"]})
 
         self.run_app(body)
+
+    def test_stats_show_the_time_per_action_and_switch_period_and_action(self) -> None:
+        async def body(app, pilot) -> None:
+            await pilot.press("tab", "tab")
+            await pilot.pause()
+            self.assertIsInstance(app.focused, StatsScroll)
+            period = app.query_one("#stats-period", Select)
+            action = app.query_one("#stats-action", Select)
+            self.assertEqual([str(option[0]) for option in period._options], ["Last 12 months", str(TODAY.year)][: len(period._options)])
+            self.assertEqual(
+                [str(option[0]) for option in action._options], ["All actions", "code (1.8 h)", "meet (0.5 h)", "review (0.2 h)"]
+            )
+            lines = str(app.query_one("#stats-text", Static).render()).splitlines()
+            # Admin has no duration, so it adds no time
+            self.assertEqual(lines[0], "2.6 h logged   3 days   0.8 h a day")
+            self.assertIn("Mon ", lines[3])
+            code = next(line for line in lines if line.startswith("code "))
+            self.assertTrue(code.endswith("71%    1.8 h"), code)
+            # Picking an action narrows the figures, and the list keeps its focus
+            action.value = "code"
+            await pilot.pause()
+            lines = str(app.query_one("#stats-text", Static).render()).splitlines()
+            self.assertEqual(lines[0], "1.8 h of +code   71% of the time   on 2 days   0.9 h on those days")
+            self.assertIsInstance(app.focused, StatsScroll)
+            # The year keeps the action
+            period.value = 1
+            await pilot.pause()
+            self.assertEqual(app.query_one(StatsView).periods[1].label, str(TODAY.year))
+            self.assertEqual(action.value, "code")
+
+            # Percentages: no hours anywhere, and the choice is kept in the config
+            period.value = 0
+            app.query_one("#stats-show", Select).value = "percentages"
+            await pilot.pause()
+            text = str(app.query_one("#stats-text", Static).render())
+            self.assertEqual(text.splitlines()[0], "+code 71% of the time")
+            self.assertNotRegex(text, r"\d h\b")
+            self.assertIn("code (71%)", [str(option[0]) for option in action._options])
+            self.assertEqual(app.config.path.read_text(), "stats_show: percentages\n")
+            action.value = ALL_ACTIONS
+            await pilot.pause()
+            text = str(app.query_one("#stats-text", Static).render())
+            self.assertEqual(text.splitlines()[0], "code 71%   meet 19%   review 10%")
+            self.assertNotRegex(text, r"\d h\b")
+
+        self.run_app(body, logs=LOGS)
 
     def test_exit_sits_at_the_right_end_of_the_tabs_row_and_quits(self) -> None:
         async def body(app, pilot) -> None:

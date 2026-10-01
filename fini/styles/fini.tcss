@@ -11,7 +11,8 @@
 }
 
 #todos-view,
-#logs-view {
+#logs-view,
+#stats-view {
     height: 1fr;
     padding: 0 1;
 }
@@ -24,7 +25,8 @@
    TODOS - YafYaf's list: search, Tags, status and New Todo over the rows
    ═══════════════════════════════════════════════════════════════════════ */
 
-#todos-controls {
+#todos-controls,
+#stats-controls {
     height: auto;
     background: transparent;
 }
@@ -41,9 +43,26 @@
 }
 
 /* The dropdowns are boxed like the search field next to them; their overlay opens below */
-#todos-controls Select {
+#todos-controls Select,
+#stats-controls Select {
     height: 3;
     margin: 0 0 0 2;
+}
+
+#stats-controls Select {
+    margin: 0 2 0 0;
+}
+
+#stats-controls #stats-period {
+    width: 20;
+}
+
+#stats-controls #stats-action {
+    width: 24;
+}
+
+#stats-controls #stats-show {
+    width: 18;
 }
 
 #todos-controls #tag-selector {
@@ -54,25 +73,29 @@
     width: 14;
 }
 
-#todos-controls Select SelectCurrent {
+#todos-controls Select SelectCurrent,
+#stats-controls Select SelectCurrent {
     background: $bg;
     border: solid $gutter;
     padding: 0 1;
     color: $fg;
 }
 
-#todos-controls Select:focus SelectCurrent {
+#todos-controls Select:focus SelectCurrent,
+#stats-controls Select:focus SelectCurrent {
     border: solid $blue;
 }
 
-#todos-controls Select SelectOverlay {
+#todos-controls Select SelectOverlay,
+#stats-controls Select SelectOverlay {
     background: $bg-dark;
     border: none;
     max-height: 12;
     scrollbar-size: 0 0;
 }
 
-#todos-controls Select SelectOverlay > .option-list--option-highlighted {
+#todos-controls Select SelectOverlay > .option-list--option-highlighted,
+#stats-controls Select SelectOverlay > .option-list--option-highlighted {
     background: $bg-light;
     color: $fg;
     text-style: none;
@@ -238,6 +261,29 @@
 
 #logs-text {
     color: $fg;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   STATS - wider than a narrow terminal: the graph scrolls sideways rather than wrap
+   ═══════════════════════════════════════════════════════════════════════ */
+
+#stats-scroll {
+    height: 1fr;
+    overflow-x: auto;
+    background: transparent;
+    scrollbar-size: 1 1;
+    scrollbar-background: $bg;
+    scrollbar-background-hover: $bg;
+    scrollbar-background-active: $bg;
+    scrollbar-color: $gutter;
+    scrollbar-color-hover: $comment;
+    scrollbar-color-active: $blue;
+}
+
+#stats-text {
+    width: auto;
+    color: $fg;
+    padding: 1 0 0 0;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════

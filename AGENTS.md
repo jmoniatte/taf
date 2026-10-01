@@ -16,7 +16,7 @@ tabs are the first row, and every message goes to the footer.
 - Help (`FiniHelpScreen`, as in outils) lists the bindings that have a description and a `group`
   (`tui_kit.shortcuts.ACTIONS` or `GENERAL`): `FiniApp.BINDINGS` on the left, under General, and
   on the right those the tab on show names in its `help_section()` (the Todos list's, a todo's
-  while one is on show, or the Logs'); document a new key there
+  while one is on show, the Logs' or the Stats'); document a new key there
 - Never hardcode a color in a `.tcss` file
 
 ## Run
@@ -65,9 +65,10 @@ fini/                   # git root + pyproject.toml (run uv commands here)
     editor.py           # edit_text: some text in $EDITOR through a temporary file; no Textual
     todos.py            # Todo, listing and searching todos, saving, done and pinned, #tags; no Textual
     logs.py             # Log, reading, creating and replacing logs, formatting a duration; no Textual
+    stats.py            # The Stats tab's sums: time per day, action and month, periods, shades; no Textual
     screens/            # FiniHelpScreen: Help with the app's keys and the tab's own, as in outils
     widgets/            # One view per tab: todos_tab.py (the list, todos_view.py, whose rows are
-                        # todos_table.py, or one todo, todo_detail.py, in todo_markdown.py) and logs_view.py;
+                        # todos_table.py, or one todo, todo_detail.py, in todo_markdown.py), logs_view.py and stats_view.py;
                         # dashed_rule.py, the rule under the todos' header, copied from yafyaf-tui
     styles/fini.tcss    # fini's own styles, joined after tui-kit's (app.STYLE_FILES)
 ```
@@ -75,7 +76,7 @@ fini/                   # git root + pyproject.toml (run uv commands here)
 ## Layout
 
 The `#tabs` `TabbedContent` is the first row, one tab per entry in `TABS` (`app.py`): Todos,
-then Logs. Each pane is `<name>-tab` and holds its view, `<name>-view`. A click
+then Logs, then Stats. Each pane is `<name>-tab` and holds its view, `<name>-view`. A click
 on a tab or `tab` switches; `tab` is an app binding with `priority`, so the screen's own `tab`
 (focus next) never runs, and it is skipped while a panel or dialog is up. The tabs cannot take
 focus, so a view keeps its keys. `FiniApp.tab` is the name of the tab on show. When a tab shows,
@@ -186,6 +187,27 @@ selects text well. Long lines wrap. Keep the text short: with all 3,000-odd logs
 because the `Static` is laid out again on every refresh and a selection refreshes it on every mouse
 move. Seven days is about 60 lines.
 
+## Stats
+
+`StatsView` (`widgets/stats_view.py`) shows where the time went, for a period and all actions or
+one. Two dropdowns pick them: Period (`stats.periods`: the last 12 months, each year, the last
+first, then All time, a graph per year) and Action ("All actions", then the period's actions, the
+most time first, with their hours, `meet (268 h)`); a period without the action picked goes back
+to All actions. A third, Show, is Hours or Percentages: Percentages hides every hour, to share
+the screen (the figures become the first actions' shares, the months 100% bars of each month's
+shares, or the action's share of each month). Show is saved as `stats_show` in the config, through
+`Config.path`, which tests point at a temporary file. The dropdowns have no keys. Under them, plain Rich text in `StatsScroll`, like the Logs tab
+(selectable, `y` copies): a line of figures, a GitHub-like graph of the days (a column per week, a
+row per weekday, Monday first; four shades of green blended into `bg`, by the quartiles of the days
+with time, `stats.levels`), the share of time per action as bars, and a bar per month, its actions
+stacked. Each action has a color by its rank in the period (`ACTION_COLORS`). One action narrows
+the figures, the graph and the months to it; the action bars stay whole, the others gray. A pick
+gives focus back to the text; a `Select` also sends `Changed` when mounted, so only a pick by a
+focused dropdown does, or the app would open on Stats.
+
+Every log with a duration counts, except `+pto` (`stats.TIME_OFF`). The logs are read again
+(`stats.load_entries`, all in memory, about 3,000 rows) each time the tab shows. The graph is about 110 columns wide; a narrower terminal scrolls it sideways.
+
 ## Command line
 
 `fini log` is the Ruby fini's command line, with `log` in front: `fini log <message>` logs it,
@@ -233,6 +255,7 @@ must be quoted when it has a tag: the shell reads an unquoted `#rails` as a comm
 each hold a `default` and `rules`, a name per list of regular expressions (`config._read_inference`;
 a `null` or invalid pattern is skipped, the latter with a warning). `database_path` is the
 SQLite file (`~` expanded), `~/.config/fini/fini.sqlite3` by default.
+`stats_show` is `hours` (the default) or `percentages`, set from the Stats tab.
 `theme` is `terminal` (the default) or the slug of a scheme in tui-kit; the picker writes it back
 with `tui_kit.config.save_setting`, which changes only that line.
 `config.example.yml` at the git root shows every key.

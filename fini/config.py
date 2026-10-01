@@ -13,6 +13,8 @@ CONFIG_DIR = Path.home() / ".config" / "fini"
 # .yml, not .yaml: the file the Ruby fini used, with its rules for actions and contexts
 CONFIG_FILE = CONFIG_DIR / "config.yml"
 DEFAULT_DATABASE = CONFIG_DIR / "fini.sqlite3"
+# What the Stats tab shows: hours, or only percentages, to share without the hours
+STATS_SHOW = ("hours", "percentages")
 
 
 @dataclass
@@ -27,13 +29,17 @@ class Config:
     # How `fini log` names the action and the context a message does not give
     action: Inference = field(default_factory=Inference)
     context: Inference = field(default_factory=Inference)
+    # Set with the Stats tab's Show dropdown, one of STATS_SHOW
+    stats_show: str = STATS_SHOW[0]
+    # Where settings picked in the app are written back
+    path: Path = field(default=CONFIG_FILE, compare=False)
     # Why the config file was ignored; the UI shows these
     warnings: list[str] = field(default_factory=list)
 
 
 def load_config(path: Path = CONFIG_FILE) -> Config:
     """Read the config file if there is one; a missing file just means defaults."""
-    config = Config()
+    config = Config(path=path)
     if not path.exists():
         return config
 
@@ -50,6 +56,7 @@ def load_config(path: Path = CONFIG_FILE) -> Config:
     if warning:
         config.warnings.append(warning)
     _read_database_path(data.get("database_path"), config)
+    _read_stats_show(data.get("stats_show"), config)
     config.action = _read_inference("action", data.get("action"), config.warnings)
     config.context = _read_inference("context", data.get("context"), config.warnings)
     return config
@@ -79,6 +86,15 @@ def _read_inference(key: str, value: object, warnings: list[str]) -> Inference:
                 warnings.append(f"{key}.rules.{name}: '{pattern}' is not a valid pattern ({error}), skipping it")
         inference.rules.append((str(name), compiled))
     return inference
+
+
+def _read_stats_show(value: object, config: Config) -> None:
+    if value is None:
+        return
+    if value not in STATS_SHOW:
+        config.warnings.append(f"stats_show: must be {' or '.join(STATS_SHOW)}, using {config.stats_show}")
+        return
+    config.stats_show = str(value)
 
 
 def _read_database_path(value: object, config: Config) -> None:

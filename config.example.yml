@@ -7,6 +7,9 @@ theme: terminal
 
 database_path: '~/.config/fini/fini.sqlite3'
 
+# What the Stats tab shows: hours, or percentages only, to share it; set from the tab
+stats_show: hours
+
 action:
   default: 'code'
   rules:

@@ -14,10 +14,10 @@ from tui_kit.header_notification import HeaderNotification
 from tui_kit.shortcuts import GENERAL
 
 from . import REPOSITORY_URL, __version__
-from .config import CONFIG_FILE, Config, load_config
+from .config import Config, load_config
 from .database import open_database
 from .screens import FiniHelpScreen
-from .widgets import LogsView, TodosTab
+from .widgets import LogsView, StatsView, TodosTab
 
 STYLES_DIR = Path(__file__).parent / "styles"
 # tui-kit's stylesheets first, so the app's own rules win where they differ
@@ -26,6 +26,7 @@ STYLE_FILES = (*tui_kit.STYLE_FILES, STYLES_DIR / "fini.tcss")
 TABS = {
     "todos": ("Todos", TodosTab),
     "logs": ("Logs", LogsView),
+    "stats": ("Stats", StatsView),
 }
 
 
@@ -89,7 +90,7 @@ class FiniApp(BaseApp):
             self.database = open_database(self.config.database_path)
         except (sqlite3.Error, OSError) as error:
             self.database_error = f"Cannot open the database {self.config.database_path}: {error}"
-        super().__init__(self.config.theme, CONFIG_FILE)
+        super().__init__(self.config.theme, self.config.path)
 
     def compose(self) -> ComposeResult:
         # No title bar: the tabs say where you are, and the messages sit by the buttons at the bottom
@@ -173,6 +174,7 @@ class FiniApp(BaseApp):
         # refresh_css only re-applies TCSS; the lists bake their colors into Rich text
         self.query_one(TodosTab).set_colors()
         self.query_one(LogsView).set_colors()
+        self.query_one(StatsView).set_colors()
 
     @property
     def tabs(self) -> Tabs:

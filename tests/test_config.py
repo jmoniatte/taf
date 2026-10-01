@@ -9,9 +9,9 @@ class LoadConfigTest(unittest.TestCase):
     def test_reads_the_theme_and_ignores_the_ruby_keys(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "config.yml"
-            path.write_text("theme: one-light\ndatabase_path: '~/fini.sqlite3'\naction:\n  default: code\n")
+            path.write_text("theme: one-light\ndatabase_path: '~/fini.sqlite3'\nstats_show: percentages\naction:\n  default: code\n")
             config = load_config(path)
-        self.assertEqual((config.theme, config.warnings), ("one-light", []))
+        self.assertEqual((config.theme, config.stats_show, config.path, config.warnings), ("one-light", "percentages", path, []))
         self.assertEqual(config.database_path, Path.home() / "fini.sqlite3")
         self.assertEqual(load_config(Path("/nonexistent/config.yml")), Config())
         self.assertEqual((Config().theme, Config().database_path), ("terminal", DEFAULT_DATABASE))
@@ -27,12 +27,16 @@ class LoadConfigTest(unittest.TestCase):
             not_a_mapping = load_config(path)
             path.write_text("database_path: [a, list]\n")
             bad_path = load_config(path)
+            path.write_text("stats_show: minutes\n")
+            bad_show = load_config(path)
         self.assertIn("'onelight' is not installed", unknown.warnings[0])
         self.assertEqual(broken.theme, "terminal")
         self.assertIn("not valid YAML", broken.warnings[0])
         self.assertEqual(not_a_mapping.warnings, ["Config file must contain a mapping of settings"])
         self.assertEqual(bad_path.database_path, DEFAULT_DATABASE)
         self.assertIn("database_path: must be a file path", bad_path.warnings[0])
+        self.assertEqual(bad_show.stats_show, "hours")
+        self.assertEqual(bad_show.warnings, ["stats_show: must be hours or percentages, using hours"])
 
     def test_action_and_context_rules_keep_their_order_and_skip_bad_patterns(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
