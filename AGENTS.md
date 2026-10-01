@@ -1,7 +1,7 @@
 # Fini
 
-TUI for todos and a log of the work done ("fini" is French for "done"), both kept in one local
-SQLite database. It replaces the Ruby fini CLI; master keeps the Ruby version until this branch
+TUI for todos, notes and a log of the work done ("fini" is French for "done"), all kept in one
+local SQLite database. It replaces the Ruby fini CLI; master keeps the Ruby version until this branch
 replaces it (`git show master:lib/fini/models/log/message_parser.rb` for its message parser).
 
 It is built on [tui-kit](../tui-kit), shared with outils, flotte and yafyaf-tui: the themes and the
@@ -15,8 +15,8 @@ tabs are the first row, and every message goes to the footer.
 - Do not git commit unless asked
 - Help (`FiniHelpScreen`, as in outils) lists the bindings that have a description and a `group`
   (`tui_kit.shortcuts.ACTIONS` or `GENERAL`): `FiniApp.BINDINGS` on the left, under General, and
-  on the right those the tab on show names in its `help_section()` (the Todos list's, a todo's
-  while one is on show, the Logs' or the Stats'); document a new key there
+  on the right those the tab on show names in its `help_section()` (the Todos or Notes list's, a
+  todo's or a note's while one is on show, the Logs' or the Stats'); document a new key there
 - Never hardcode a color in a `.tcss` file
 
 ## Run
@@ -28,10 +28,11 @@ fini log                                # today's logs
 fini log -v 2                           # the last 2 days' logs
 fini log -e 2                           # edit the last 2 days' logs in $EDITOR
 fini todo "Refactor the subscriptions #rails"   # write a todo
+fini note "Wifi password is on the fridge #home" # write a note
 ```
 
-`fini` refuses to start unless stdin and stdout are a terminal (tui-kit's `start`); `fini log`
-and `fini todo` do not go through that check.
+`fini` refuses to start unless stdin and stdout are a terminal (tui-kit's `start`); `fini log`,
+`fini todo` and `fini note` do not go through that check.
 
 ## Test
 
@@ -56,27 +57,27 @@ fini/                   # git root + pyproject.toml (run uv commands here)
   fini/                 # Python package
     __init__.py         # The version and the repository's URL
     __main__.py         # The command line: the TUI, or `fini log`'s own parser
-    todo_command.py     # `fini todo`: write a todo in the shell, tags at the end on their own line; no Textual
+    note_command.py     # `fini note` and `fini todo`: write one in the shell, tags at the end on their own line; no Textual
     log_command.py      # `fini log`: log, view and edit in the shell, as the Ruby fini did; no Textual
     message.py          # A message's @duration, @context and +action, and the rules that infer the rest; no Textual
     app.py              # FiniApp, a tui-kit BaseApp: TABS, the footer and its messages, the keys
     config.py           # Optional ~/.config/fini/config.yml (theme, through tui_kit.config; database_path)
     database.py         # Opening the SQLite database and its migrations; no Textual
     editor.py           # edit_text: some text in $EDITOR through a temporary file; no Textual
-    todos.py            # Todo, listing and searching todos, saving, done and pinned, #tags; no Textual
+    notes.py            # Note (a todo is a note of the kind todo), listing and searching, saving, done and pinned, #tags; no Textual
     logs.py             # Log, reading, creating and replacing logs, formatting a duration; no Textual
     stats.py            # The Stats tab's sums: time per day, action and month, periods, shades; no Textual
     screens/            # FiniHelpScreen: Help with the app's keys and the tab's own, as in outils
-    widgets/            # One view per tab: todos_tab.py (the list, todos_view.py, whose rows are
-                        # todos_table.py, or one todo, todo_detail.py, in todo_markdown.py), logs_view.py and stats_view.py;
-                        # dashed_rule.py, the rule under the todos' header, copied from yafyaf-tui
+    widgets/            # One view per tab: notes_tab.py, NotesTab and TodosTab (the list, notes_view.py, whose rows are
+                        # notes_table.py, or one note, note_detail.py, in note_markdown.py), logs_view.py and stats_view.py;
+                        # dashed_rule.py, the rule under the lists' header, copied from yafyaf-tui
     styles/fini.tcss    # fini's own styles, joined after tui-kit's (app.STYLE_FILES)
 ```
 
 ## Layout
 
-The `#tabs` `TabbedContent` is the first row, one tab per entry in `TABS` (`app.py`): Todos,
-then Logs, then Stats. Each pane is `<name>-tab` and holds its view, `<name>-view`. A click
+The `#tabs` `TabbedContent` is the first row, one tab per entry in `TABS` (`app.py`): Notes,
+then Todos, then Logs, then Stats; the app opens on Notes. Each pane is `<name>-tab` and holds its view, `<name>-view`. A click
 on a tab or `tab` switches; `tab` is an app binding with `priority`, so the screen's own `tab`
 (focus next) never runs, and it is skipped while a panel or dialog is up. The tabs cannot take
 focus, so a view keeps its keys. `FiniApp.tab` is the name of the tab on show. When a tab shows,
@@ -96,27 +97,35 @@ Help comes back once it clears. Copied from outils.
 
 ## Todos
 
+Todos and notes are one table, `notes`, and one model, `notes.Note`: a todo is a note whose `kind`
+is `todo` (`notes.TODO`), a plain note's is `note` (`notes.NOTE`). Every function in `notes.py`
+takes the kind where it lists (`list_notes`, `tag_counts`); `set_done` leaves a plain note alone.
+The widgets are the same too: `NotesTab`, `NotesView`, `NoteDetail` and `NotesTable` are for
+notes, and `TodosTab`, `TodosView` and `TodoDetail` subclass them with `KIND = TODO`, adding the
+status (see Notes for what differs). This section says "todo", but all of it holds for a note
+unless Notes says otherwise.
+
 The Todos tab is YafYaf's yaf list (yafyaf-tui's `YafsView`) on the local database, and the todos
 YafYaf had for a while (kept in a stash in yafyaf-tui and yafyaf, "Todos tab" and "Todos API").
 `TodosView` is a search box, the Tags dropdown, the status dropdown (Open, Done, All) and New
 Todo, over a header with the count ("2 open todos", "1 todo matching 'x'"), a
-dashed rule and `TodosTable`. A row is a check box and a star (Nerd Font `󰄱`/`󰄲`, `☆`/`★`), then
+dashed rule and `NotesTable`. A row is a check box and a star (Nerd Font `󰄱`/`󰄲`, `☆`/`★`), then
 the summary: the first line with text, links by their label in blue, inline
 code without its backticks in orange (as in the view), a markdown heading without its `#`s in yellow, tags in purple, then the todo's tags that are not
-in that first line (`Todo.tags`, from the whole content) in cyan, clickable like the others;
+in that first line (`Note.tags`, from the whole content) in cyan, clickable like the others;
 all gray once done. The last updated first,
-`updated_at` only (`todos.list_todos`): pinned and done todos are not sorted apart.
+`updated_at` only (`notes.list_notes`): pinned and done todos are not sorted apart.
 
 A todo is `content`, `tags`, `pinned`, `done_at` (done is `done_at` being set; marking a done
 todo done again keeps the first time), `created_at` and `updated_at`. `tags` is a JSON array,
-`["home", "work"]`, of the `#tags` in the content (YafYaf's rule, `todos.TAG`: a letter after the
+`["home", "work"]`, of the `#tags` in the content (YafYaf's rule, `notes.TAG`: a letter after the
 `#`, not glued to what precedes it, never in inline code), rewritten on every save, so the Tags
 dropdown's counts and a `#tag` in the search are SQL over `json_each`. The status is in the search, as on GitHub:
 `is:open` (the search starts with it) or `is:done` (`is:closed` too), and none for all
-(`todos.split_status`; the last one wins). The status dropdown only mirrors it: `TodosView.load`
+(`notes.split_status`; the last one wins). The status dropdown only mirrors it: `TodosView.load`
 sets the dropdown from the search, and picking a status, or `f`, puts `is:open` or `is:done` first
 in the search in place of the one there, or takes it out for All. A search keeps the todos
-that have every `#tag` (SQL) and whose content, its tags left out (`todos.without_tags`), has
+that have every `#tag` (SQL) and whose content, its tags left out (`notes.without_tags`), has
 every plain word, case ignored (in Python, as `LIKE` cannot leave the tags out; there are few
 todos): "api" finds "the API" and "rapid", not "#api", which `#api` finds.
 
@@ -135,12 +144,12 @@ star in the row and move nothing, which would be confusing: the status filter ap
 load (a todo marked done stays on the Open list, gray, until then). Neither changes `updated_at`, which
 says when the content last changed.
 
-`TodosTab` (`widgets/todos_tab.py`) is what the tab holds: the list (`TodosView`) or, in its
+`TodosTab` (`widgets/notes_tab.py`) is what the tab holds: the list (`TodosView`) or, in its
 place, one todo (`TodoDetail`), as yafyaf-tui's `MainArea` switches between its list and
-`YafDetail`; `TodosTab.viewing` is the todo on show, or None. The view shows a line first: the check
+`YafDetail`; `NotesTab.viewing` is the todo on show, or None. The view shows a line first: the check
 box and the star as in the list, which a click toggles (in the list's row too), then, in green,
-"Updated Monday, July 1, 2026" (`todos.long_date`, yafyaf-tui's format), when the content last
-changed; then its content as markdown (`TodoMarkdown`, a
+"Updated Monday, July 1, 2026" (`notes.long_date`, yafyaf-tui's format), when the content last
+changed; then its content as markdown (`NoteMarkdown`, a
 copy of yafyaf-tui's `YafMarkdown`: links the terminal can open, tags that filter the list, code
 blocks; its styles map Textual's markdown onto the palette). Escape or `q` goes back to the list,
 `e` or Shift+Enter edits, `y` copies the selection or the todo, `j` and `k` scroll. While a todo
@@ -150,15 +159,32 @@ is on show the footer has Close, back to the list like Escape, then a blue Edit 
 is on show, the footer has a green Refresh there instead, which reloads it like `r`, for todos
 written by `fini todo` meanwhile.
 
-Editing (`TodosTab.edit`) opens the todo in `$EDITOR` (`editor.edit_text`, inside
+Editing (`NotesTab.edit`) opens the todo in `$EDITOR` (`editor.edit_text`, inside
 `App.suspend`) as markdown under YAML front matter with `created_at`, `updated_at`, `done_at` (the
-time, or nothing) and `pinned` (`true` or `false`), colons lined up (`todos.front_matter`,
+time, or nothing) and `pinned` (`true` or `false`), colons lined up (`notes.front_matter`,
 `editor.field_lines`), like a yaf in yafyaf-tui's editor; a new todo opens empty. The front matter
 is for the eye only: it is dropped on save (`editor.without_front_matter`), changed or not.
 Emptied, a todo is deleted once confirmed, and a new one left empty is a cancel; an editor that
 exits with an error (`:cq`) saves nothing. Saving goes back where the edit started: the todo,
 showing what was saved, or the list, reloaded with the cursor on the todo. A todo deleted from its
 view goes back to the list.
+
+## Notes
+
+The Notes tab (`NotesTab`) is the Todos tab without the status: no check box in a row or in the
+view (only the star, so the row's first column is 1 wide, `notes_table.lead_width`), no status
+dropdown, no `x` or `f`, no `is:` in the search (typed, it is ignored), no `done_at` in the
+editor's front matter. Notes are pinned and deleted like todos. A note may have many tags, so
+picking a tag (`NotesView.add_tag`) adds it to the search rather than replacing the one there, and
+Any tag takes them all out; the Tags dropdown shows the search's last tag. `TodosView.add_tag`
+keeps the todos' one tag. Both tabs share the footer's Close, Edit, Delete and Refresh, which act
+on the tab on show (`FiniApp.active_view`). The ids inside the two tabs are the same
+(`#notes-list`, `#search`, `#note-detail`...), so a test scopes its queries to the tab
+(`app.query_one("#todos-view")`); `AppCase.TAB` in `tests/test_notes_view.py` is the tab a test
+starts on.
+
+A `Select` sends `Changed` when mounted: `NotesView._tag_picked` ignores a pick of the tag
+already in the search, or the Todos tab's list would take focus and the app would open on Todos.
 
 ## Logs
 
@@ -242,9 +268,9 @@ rules, in one transaction (`logs.replace_days`). Other lines are ignored, and a 
 was removed keeps its logs. Times lose their seconds, as in the Ruby fini. A date or time that
 does not exist saves nothing and keeps the file, whose path the error gives.
 
-`fini todo <message>` writes a todo (`todo_command.run`, its own parser, `__main__.todo_parser`).
-The `#tags` at the end of the message go on their own line after a blank one
-(`todo_command.todo_content`): `fini todo "Refactor the subscriptions #rails"` stores
+`fini todo <message>` writes a todo, and `fini note <message>` a note (`note_command.run`, their
+own parser, `__main__.note_parser`). The `#tags` at the end of the message go on their own line
+after a blank one (`note_command.note_content`): `fini todo "Refactor the subscriptions #rails"` stores
 `Refactor the subscriptions\n\n#rails`, so the list shows the text with `#rails` in cyan after it.
 A tag inside the message stays where it is, and a message of tags only is kept as is. The message
 must be quoted when it has a tag: the shell reads an unquoted `#rails` as a comment.
@@ -267,7 +293,8 @@ the migrations it lacks. `database.MIGRATIONS` is a list of SQL scripts, in orde
 user_version` is how many of them a database has run, and each runs with its new number in one
 transaction. Add a migration at the end; never edit one that may have run.
 
-Migration 2 adds the `todos` table (see Todos). Migration 1 is the `logs` table and its three indexes exactly as the Ruby fini's Sequel
+Migration 2 adds the `todos` table; migration 3 renames it `notes` and adds `kind`, every row
+before it being a todo (see Todos). Migration 1 is the `logs` table and its three indexes exactly as the Ruby fini's Sequel
 migrations made them, read off a real database. A Ruby fini database is at `user_version` 0 with
 a `logs` table already: it is marked as being at `RUBY_VERSION` and migration 1 never runs on it.
 Its `schema_migrations` table (Sequel's) is left alone. Before the first change to a database

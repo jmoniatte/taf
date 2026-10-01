@@ -13,8 +13,8 @@ from tui_kit.dialog import ConfirmDialog
 from fini.app import FiniApp
 from fini.config import Config
 from fini.database import open_database
-from fini.todos import create_todo, list_todos, long_date, set_done, set_pinned
-from fini.widgets import TodoDetail, TodosTab, TodosTable
+from fini.notes import NOTE, TODO, create_note, list_notes, long_date, set_done, set_pinned
+from fini.widgets import NoteDetail, NotesTab, NotesTable, TodoDetail, TodosTab
 
 
 def python_editor(code: str) -> str:
@@ -32,36 +32,49 @@ def suspend(_app):
     yield
 
 
-class TodosViewTest(unittest.TestCase):
-    def run_app(self, body, todos=()) -> None:
+class AppCase(unittest.TestCase):
+    # The tab the test starts on, which the app opens on or tab moves to
+    TAB = "notes"
+
+    def run_app(self, body, todos=(), notes=()) -> None:
         async def main() -> None:
             with tempfile.TemporaryDirectory() as tmp, patch("fini.app.FiniApp.suspend", suspend):
                 path = Path(tmp) / "fini.sqlite3"
                 self.db = open_database(path)
-                self.made = [create_todo(self.db, content) for content in todos]
+                self.made = [create_note(self.db, content, TODO) for content in todos]
+                for content in notes:
+                    create_note(self.db, content)
                 app = FiniApp(Config(theme="onedark", database_path=path, path=Path(tmp) / "config.yml"))
                 async with app.run_test(size=(110, 24)) as pilot:
                     await pilot.pause()
+                    while app.tab != self.TAB:
+                        await pilot.press("tab")
+                        await pilot.pause()
                     await body(app, pilot)
                 self.db.close()
 
         asyncio.run(main())
 
     def rows(self, app) -> list[list[str]]:
-        table = app.query_one(TodosTable)
+        table = app.query_one("#todos-view").query_one(NotesTable)
         return [[str(cell) for cell in table.get_row_at(row)] for row in range(table.row_count)]
 
     def summaries(self, app) -> list[str]:
         return [row[1] for row in self.rows(app)]
 
     def status(self, app) -> str:
-        return str(app.query_one("#todos-status", Static).render())
+        return str(app.query_one("#todos-view").query_one("#notes-status", Static).render())
+
+
+
+class TodosViewTest(AppCase):
+    TAB = "todos"
 
     def test_the_list_and_its_keys(self) -> None:
         async def body(app, pilot) -> None:
             renew, review, plan = self.made
             for minute, todo in enumerate((renew, review, plan)):
-                self.db.execute("UPDATE todos SET updated_at = ? WHERE id = ?", (f"2026-09-30 10:0{minute}:00.000000", todo.id))
+                self.db.execute("UPDATE notes SET updated_at = ? WHERE id = ?", (f"2026-09-30 10:0{minute}:00.000000", todo.id))
             set_pinned(self.db, renew.id, True)
             await pilot.press("r")
             await pilot.pause()
@@ -69,7 +82,7 @@ class TodosViewTest(unittest.TestCase):
             self.assertEqual(self.summaries(app), ["Plan the trip", "Review the PR #work", "Renew passport #home"])
             self.assertEqual([row[0] for row in self.rows(app)], ["\U000f0131  ☆", "\U000f0131  ☆", "\U000f0131  ★"])
             self.assertEqual(self.status(app), "3 open todos")
-            self.assertTrue(app.query_one(TodosTable).has_focus)
+            self.assertTrue(app.query_one("#todos-view").query_one(NotesTable).has_focus)
 
             # x marks the highlighted one done in its row: it leaves the open list on the next load
             await pilot.press("j", "x")
@@ -95,52 +108,52 @@ class TodosViewTest(unittest.TestCase):
             await pilot.pause()
             self.assertEqual(self.rows(app)[0][0], "\U000f0131  ☆")
             self.assertEqual(self.summaries(app), ["Plan the trip", "Review the PR #work", "Renew passport #home"])
-            self.assertEqual(app.query_one(TodosTable).cursor_row, 0)
+            self.assertEqual(app.query_one("#todos-view").query_one(NotesTable).cursor_row, 0)
 
             # / searches, Enter runs it and goes back to the list
             await pilot.press("slash")
-            self.assertTrue(app.query_one("#search", Input).has_focus)
+            self.assertTrue(app.query_one("#todos-view").query_one("#search", Input).has_focus)
             await pilot.press(*"PASS", "enter")
             await pilot.pause()
             self.assertEqual((self.summaries(app), self.status(app)), (["Renew passport #home"], "1 todo matching 'PASS'"))
-            self.assertTrue(app.query_one(TodosTable).has_focus)
+            self.assertTrue(app.query_one("#todos-view").query_one(NotesTable).has_focus)
 
             # The Tags dropdown lists the tags with counts; picking one adds it to the search
-            tags = app.query_one("#tag-selector", Select)
+            tags = app.query_one("#todos-view").query_one("#tag-selector", Select)
             # No "Tags" placeholder in the list: Any stands for no tag
             self.assertEqual([str(prompt) for prompt, _ in tags._options], ["Any tag", "home (1)", "work (1)"])
             self.assertEqual(tags.value, "any tag")
-            app.query_one("#search", Input).value = ""
+            app.query_one("#todos-view").query_one("#search", Input).value = ""
             tags.value = "work"
             await pilot.pause()
-            self.assertEqual((app.query_one("#search", Input).value, self.summaries(app)), ("#work", ["Review the PR #work"]))
+            self.assertEqual((app.query_one("#todos-view").query_one("#search", Input).value, self.summaries(app)), ("#work", ["Review the PR #work"]))
             # It shows the search's tag, as the status dropdown shows its status
             self.assertEqual(tags.value, "work")
             # Another tag takes the place of the one in the search; its words stay
-            app.query_one("#search", Input).value = "renew #work"
+            app.query_one("#todos-view").query_one("#search", Input).value = "renew #work"
             tags.value = "home"
             await pilot.pause()
-            self.assertEqual((app.query_one("#search", Input).value, self.summaries(app)), ("renew #home", ["Renew passport #home"]))
+            self.assertEqual((app.query_one("#todos-view").query_one("#search", Input).value, self.summaries(app)), ("renew #home", ["Renew passport #home"]))
             # Any takes the tag out, as All does the status
-            app.query_one("#search", Input).value = "is:open renew #home"
+            app.query_one("#todos-view").query_one("#search", Input).value = "is:open renew #home"
             tags.value = "any tag"
             await pilot.pause()
-            self.assertEqual((app.query_one("#search", Input).value, self.summaries(app)), ("is:open renew", ["Renew passport #home"]))
+            self.assertEqual((app.query_one("#todos-view").query_one("#search", Input).value, self.summaries(app)), ("is:open renew", ["Renew passport #home"]))
             self.assertEqual(tags.value, "any tag")
             # A tag typed in the search shows there too; one no todo has shows as Any, and stays in the search
             for typed, shown in (("#home", "home"), ("#ghost", "any tag")):
                 await pilot.press("slash")
-                app.query_one("#search", Input).value = typed
+                app.query_one("#todos-view").query_one("#search", Input).value = typed
                 await pilot.press("enter")
                 await pilot.pause()
-                self.assertEqual((tags.value, app.query_one("#search", Input).value), (shown, typed))
+                self.assertEqual((tags.value, app.query_one("#todos-view").query_one("#search", Input).value), (shown, typed))
 
         self.run_app(body, todos=("Renew passport #home", "Review the PR #work", "Plan the trip"))
 
     def test_the_status_lives_in_the_search_as_is_open_or_is_done(self) -> None:
         async def body(app, pilot) -> None:
-            search = app.query_one("#search", Input)
-            status = app.query_one("#todo-status", Select)
+            search = app.query_one("#todos-view").query_one("#search", Input)
+            status = app.query_one("#todos-view").query_one("#todo-status", Select)
             set_done(self.db, self.made[0].id, True)
             await pilot.press("r")
             await pilot.pause()
@@ -174,13 +187,13 @@ class TodosViewTest(unittest.TestCase):
             self.assertTrue(refresh.display)
             self.assertTrue(refresh.has_class("tinted", "-green"))
             # Written elsewhere, say by fini todo, it shows once refreshed
-            create_todo(self.db, "Written from the shell")
+            create_note(self.db, "Written from the shell", TODO)
             self.assertEqual(self.summaries(app), ["Old one"])
             await pilot.click("#btn-refresh")
             await pilot.pause()
             self.assertEqual(self.summaries(app), ["Written from the shell", "Old one"])
-            self.assertTrue(app.query_one(TodosTable).has_focus)
-            # Not on a todo, nor on Logs
+            self.assertTrue(app.query_one("#todos-view").query_one(NotesTable).has_focus)
+            # Not on a todo, nor on Logs; on the notes' list too
             await pilot.press("enter")
             await pilot.pause()
             self.assertFalse(refresh.display)
@@ -190,24 +203,27 @@ class TodosViewTest(unittest.TestCase):
             await pilot.press("tab")
             await pilot.pause()
             self.assertFalse(refresh.display)
+            await pilot.press("tab", "tab")
+            await pilot.pause()
+            self.assertTrue(refresh.display)
 
         self.run_app(body, todos=("Old one",))
 
     def test_clicks_on_the_box_the_star_and_a_tag(self) -> None:
         async def body(app, pilot) -> None:
-            table = app.query_one(TodosTable)
+            table = app.query_one("#todos-view").query_one(NotesTable)
             # The box's half of the first column, then the star's
             await pilot.click(table, offset=(1, 0))
             await pilot.pause()
             self.assertEqual(self.rows(app)[0][0], "\U000f0132  ☆")
             await pilot.click(table, offset=(4, 0))
             await pilot.pause()
-            [todo] = list_todos(self.db, status="all")
+            [todo] = list_notes(self.db, TODO, status="all")
             self.assertEqual((todo.done, todo.pinned), (True, True))
             # A tag filters on it
             await pilot.click(table, offset=(10, 0))
             await pilot.pause()
-            self.assertEqual(app.query_one("#search", Input).value, "is:open #home")
+            self.assertEqual(app.query_one("#todos-view").query_one("#search", Input).value, "is:open #home")
 
         self.run_app(body, todos=("#home chores",))
 
@@ -231,17 +247,17 @@ class TodosViewTest(unittest.TestCase):
             with patch.dict("os.environ", {"EDITOR": python_editor(code)}):
                 await pilot.press("shift+enter")
                 await pilot.pause()
-            todo = list_todos(self.db)[0]
+            todo = list_notes(self.db, TODO, status="open")[0]
             self.assertEqual(
                 seen.read_text(),
                 f"---\ncreated_at : {todo.created_at:%Y-%m-%d %H:%M}\nupdated_at : {todo.updated_at:%Y-%m-%d %H:%M}\n"
                 "done_at    :\npinned     : false\n---\n\nBuy milk #home",
             )
             self.assertEqual(self.summaries(app), ["Buy oat milk #home #shop", "Old one"])
-            self.assertEqual(list_todos(self.db)[0].tags, ("home", "shop"))
+            self.assertEqual(list_notes(self.db, TODO, status="open")[0].tags, ("home", "shop"))
 
             # Pinned and done show too
-            todo = list_todos(self.db)[0]
+            todo = list_notes(self.db, TODO, status="open")[0]
             set_pinned(self.db, todo.id, True)
             done = set_done(self.db, todo.id, True)
             with patch.dict("os.environ", {"EDITOR": python_editor(f"import sys, shutil; shutil.copy(sys.argv[1], {str(seen)!r})")}):
@@ -285,45 +301,45 @@ class TodosViewTest(unittest.TestCase):
             await pilot.press("enter")
             await pilot.pause()
             # Close, then the blue Edit, at the left of the footer
-            close_button = app.query_one("#btn-close-todo")
+            close_button = app.query_one("#btn-close-note")
             edit_button = app.query_one("#btn-edit")
             self.assertTrue(close_button.display and edit_button.display)
             self.assertEqual(close_button.region.y, edit_button.region.y)
             self.assertLess(close_button.region.right, edit_button.region.x)
             self.assertTrue(edit_button.has_class("tinted"))
-            todo = list_todos(self.db)[0]
+            todo = list_notes(self.db, TODO, status="open")[0]
             self.assertTrue(detail.display)
-            self.assertFalse(app.query_one("#todos-list").display)
+            self.assertFalse(app.query_one("#todos-view").query_one("#notes-list").display)
             self.assertTrue(edit_button.display)
             # The star, outlined, then when it was last updated
-            star = app.query_one("#todo-detail-pin", Static)
-            date = app.query_one("#todo-detail-date", Static)
+            star = app.query_one("#todos-view").query_one("#note-detail-pin", Static)
+            date = app.query_one("#todos-view").query_one("#note-detail-date", Static)
             self.assertEqual(str(star.render()).strip(), "☆")
             self.assertEqual(str(date.render()), f"Updated {long_date(todo.updated_at)}")
             # A click on the star pins, there and in the list, and leaves "Updated" as it was
             await pilot.click(star)
             await pilot.pause()
             self.assertEqual((str(star.render()).strip(), star.has_class("-pinned")), ("★", True))
-            self.assertTrue(list_todos(self.db)[0].pinned)
+            self.assertTrue(list_notes(self.db, TODO, status="open")[0].pinned)
             self.assertEqual(self.rows(app)[0][0], "\U000f0131  ★")
             self.assertEqual(str(date.render()), f"Updated {long_date(todo.updated_at)}")
             await pilot.click(star)
             await pilot.pause()
-            self.assertEqual((str(star.render()).strip(), list_todos(self.db)[0].pinned), ("☆", False))
+            self.assertEqual((str(star.render()).strip(), list_notes(self.db, TODO, status="open")[0].pinned), ("☆", False))
             # The box marks done and back, there and in the list, the date still "Updated"
-            box = app.query_one("#todo-detail-done", Static)
+            box = app.query_one("#todos-view").query_one("#note-detail-done", Static)
             self.assertEqual(str(box.render()).strip(), "\U000f0131")
             await pilot.click(box)
             await pilot.pause()
             self.assertEqual(str(box.render()).strip(), "\U000f0132")
-            self.assertTrue(list_todos(self.db, status="done"))
+            self.assertTrue(list_notes(self.db, TODO, status="done"))
             self.assertEqual(self.rows(app)[0][0], "\U000f0132  ☆")
             self.assertEqual(str(date.render()), f"Updated {long_date(todo.updated_at)}")
             await pilot.click(box)
             await pilot.pause()
             self.assertEqual(str(box.render()).strip(), "\U000f0131")
-            self.assertFalse(list_todos(self.db, status="done"))
-            markdown = app.query_one("#todo-detail-markdown")
+            self.assertFalse(list_notes(self.db, TODO, status="done"))
+            markdown = app.query_one("#todos-view").query_one("#note-detail-markdown")
             self.assertIn("uv run fini", markdown.source)
             self.assertTrue(markdown.query("MarkdownFence"))
 
@@ -344,12 +360,12 @@ class TodosViewTest(unittest.TestCase):
             await pilot.press("tab")
             await pilot.pause()
             self.assertFalse(close_button.display or edit_button.display)
-            await pilot.press("tab", "tab")
+            await pilot.press("tab", "tab", "tab")
             await pilot.pause()
             self.assertTrue(detail.display and close_button.display and edit_button.display)
 
             # Close goes back to the list, as does Escape, and both buttons leave
-            await pilot.click("#btn-close-todo")
+            await pilot.click("#btn-close-note")
             await pilot.pause()
             self.assertFalse(detail.display or close_button.display or edit_button.display)
             await pilot.press("enter")
@@ -358,7 +374,7 @@ class TodosViewTest(unittest.TestCase):
             await pilot.press("escape")
             await pilot.pause()
             self.assertFalse(detail.display or close_button.display)
-            self.assertTrue(app.query_one(TodosTable).has_focus)
+            self.assertTrue(app.query_one("#todos-view").query_one(NotesTable).has_focus)
             self.assertEqual(self.summaries(app), ["Shipped"])
 
             # Shift+Enter edits from the list, and saving stays on the list
@@ -387,7 +403,7 @@ class TodosViewTest(unittest.TestCase):
             await pilot.pause()
             self.assertFalse(detail.display or delete_button.display)
             self.assertEqual(self.summaries(app), [])
-            self.assertEqual(list_todos(self.db, status="all"), [])
+            self.assertEqual(list_notes(self.db, TODO, status="all"), [])
 
         self.run_app(body, todos=("# Release #work\n\n```bash\nuv run fini\n```",))
 
@@ -398,10 +414,73 @@ class TodosViewTest(unittest.TestCase):
             await pilot.pause()
             app.apply_theme("dracula")
             await pilot.pause()
-            summary = app.query_one(TodosTable).get_row_at(0)[1]
+            summary = app.query_one("#todos-view").query_one(NotesTable).get_row_at(0)[1]
             self.assertIn("#6272a4", str(summary.spans[-1].style).lower())
 
         self.run_app(body, todos=("Done one #home",))
+
+
+class NotesViewTest(AppCase):
+    def test_notes_have_a_star_but_no_status_and_their_tags_add_up(self) -> None:
+        async def body(app, pilot) -> None:
+            # The first tab
+            self.assertEqual(app.tab, "notes")
+            tab = app.query_one("#notes-view", NotesTab)
+            table = tab.query_one(NotesTable)
+            search = tab.query_one("#search", Input)
+            rows = lambda: [[str(cell) for cell in table.get_row_at(row)] for row in range(table.row_count)]  # noqa: E731
+            # Only the notes: the todo stays on Todos; a star, no box, and no status anywhere
+            self.assertTrue(table.has_focus)
+            self.assertEqual(rows(), [["☆", "Wifi is on the fridge #home #wifi"], ["☆", "Car insurance #home #car"]])
+            self.assertEqual((search.value, str(tab.query_one("#notes-status", Static).render())), ("", "2 notes"))
+            self.assertFalse(tab.query("#todo-status"))
+            await pilot.press("x", "f", "p")
+            await pilot.pause()
+            self.assertEqual(rows()[0][0], "★")
+            self.assertEqual(search.value, "")
+            await pilot.click(table, offset=(1, 1))
+            await pilot.pause()
+            self.assertEqual(rows()[1][0], "★")
+            # Tags add up, from a click or the dropdown; Any takes them all out
+            await pilot.click(table, offset=(27, 0))
+            await pilot.pause()
+            self.assertEqual(search.value, "#home")
+            tags = tab.query_one("#tag-selector", Select)
+            self.assertEqual([str(prompt) for prompt, _ in tags._options], ["Any tag", "home (2)", "car (1)", "wifi (1)"])
+            tags.value = "wifi"
+            await pilot.pause()
+            self.assertEqual((search.value, rows()), ("#home #wifi", [["★", "Wifi is on the fridge #home #wifi"]]))
+            tags.value = "any tag"
+            await pilot.pause()
+            self.assertEqual((search.value, len(rows())), ("", 2))
+
+            # A new note is a note, its front matter without done_at; its view has the star, not the box
+            seen = Path(tempfile.gettempdir()) / f"fini-test-seen-{id(self)}"
+            self.addCleanup(seen.unlink, missing_ok=True)
+            code = f"import sys, shutil; shutil.copy(sys.argv[1], {str(seen)!r}); open(sys.argv[1], 'w').write('Gate code #home')"
+            with patch.dict("os.environ", {"EDITOR": python_editor(code)}):
+                await pilot.press("n")
+                await pilot.pause()
+                self.assertEqual([note.content for note in list_notes(self.db, NOTE)][0], "Gate code #home")
+                await pilot.press("e")
+                await pilot.pause()
+            self.assertNotIn("done_at", seen.read_text())
+            await pilot.press("enter")
+            await pilot.pause()
+            detail = tab.query_one(NoteDetail)
+            self.assertTrue(detail.display)
+            self.assertFalse(detail.query("#note-detail-done"))
+            self.assertEqual(str(detail.query_one("#note-detail-pin", Static).render()).strip(), "☆")
+            # Delete, from the footer, as for a todo
+            await pilot.click("#btn-delete")
+            await pilot.pause()
+            await pilot.click("#confirm-btn")
+            await pilot.pause()
+            self.assertFalse(detail.display)
+            self.assertEqual(len(list_notes(self.db, NOTE)), 2)
+            self.assertEqual(len(list_notes(self.db, TODO)), 1)
+
+        self.run_app(body, todos=("A todo #home",), notes=("Car insurance #home #car", "Wifi is on the fridge #home #wifi"))
 
 
 if __name__ == "__main__":

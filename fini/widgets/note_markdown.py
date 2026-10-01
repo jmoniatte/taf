@@ -8,8 +8,8 @@ from textual.style import Style
 from textual.widgets import Markdown
 from textual.widgets.markdown import MarkdownBlock
 
-from ..todos import find_tags
-from .todos_table import TagSelected
+from ..notes import find_tags
+from .notes_table import TagSelected
 
 
 def _with_hyperlink(style: Style | str) -> Style | str:
@@ -41,7 +41,7 @@ class _LinkedBlock:
         self.post_message(TagSelected(name))
 
 
-class TodoMarkdown(Markdown):
+class NoteMarkdown(Markdown):
     """Markdown whose links the terminal can open itself, as it can the list's, and whose tags filter the list."""
 
     _linked: dict[type[MarkdownBlock], type[MarkdownBlock]] = {}

@@ -1,8 +1,20 @@
 from .logs_view import LogsScroll, LogsView
+from .note_detail import NoteDetail, TodoDetail
+from .notes_tab import NotesTab, TodosTab
+from .notes_table import NotesTable
+from .notes_view import NotesView, TodosView
 from .stats_view import StatsScroll, StatsView
-from .todo_detail import TodoDetail
-from .todos_tab import TodosTab
-from .todos_table import TodosTable
-from .todos_view import TodosView
 
-__all__ = ["LogsScroll", "LogsView", "StatsScroll", "StatsView", "TodoDetail", "TodosTab", "TodosTable", "TodosView"]
+__all__ = [
+    "LogsScroll",
+    "LogsView",
+    "NoteDetail",
+    "NotesTab",
+    "NotesTable",
+    "NotesView",
+    "StatsScroll",
+    "StatsView",
+    "TodoDetail",
+    "TodosTab",
+    "TodosView",
+]

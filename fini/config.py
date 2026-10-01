@@ -24,7 +24,7 @@ class Config:
     # Set with t in the app; "terminal" reads the terminal's own colours, otherwise any
     # scheme in tui-kit (see tui_kit.theme.list_themes()).
     theme: str = TERMINAL_THEME
-    # The SQLite file with the logs and the todos; ~ is expanded
+    # The SQLite file with the logs, the notes and the todos; ~ is expanded
     database_path: Path = DEFAULT_DATABASE
     # How `fini log` names the action and the context a message does not give
     action: Inference = field(default_factory=Inference)

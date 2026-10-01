@@ -33,6 +33,12 @@ MIGRATIONS = (
         updated_at TIMESTAMP NOT NULL
     );
     """,
+    # 3: todos become notes of the kind 'todo'; a plain note has the kind 'note' and is never done
+    """
+    ALTER TABLE todos RENAME TO notes;
+    ALTER TABLE notes ADD COLUMN kind TEXT NOT NULL DEFAULT 'note';
+    UPDATE notes SET kind = 'todo';
+    """,
 )
 # The last migration a Ruby fini database already has
 RUBY_VERSION = 1

@@ -1,4 +1,5 @@
-"""Todos in the database: listing, searching, saving, done and pinned, and their #tags; no Textual."""
+"""Notes in the database, todos among them: listing, searching, saving, done and pinned, and their
+#tags; no Textual."""
 
 import json
 import re
@@ -8,7 +9,11 @@ from datetime import datetime
 
 from .logs import timestamp
 
-# What the status dropdown offers, as (label, status)
+# A note's kinds: a todo can be done, a note cannot
+NOTE = "note"
+TODO = "todo"
+
+# What the todos' status dropdown offers, as (label, status)
 STATUSES = (("Open", "open"), ("Done", "done"), ("All", "all"))
 DEFAULT_STATUS = "open"
 
@@ -18,14 +23,19 @@ INLINE_CODE = re.compile(r"`[^`\n]*`")
 
 
 @dataclass(frozen=True, slots=True)
-class Todo:
+class Note:
     id: int
+    kind: str
     content: str
     tags: tuple[str, ...]
     pinned: bool
     done_at: datetime | None
     created_at: datetime
     updated_at: datetime
+
+    @property
+    def is_todo(self) -> bool:
+        return self.kind == TODO
 
     @property
     def done(self) -> bool:
@@ -37,14 +47,16 @@ class Todo:
         return next((line.strip() for line in self.content.splitlines() if line.strip()), "")
 
 
-def front_matter(todo: Todo) -> dict[str, str]:
-    """What the editor and the view show over a todo's content, in this order."""
-    return {
-        "created_at": f"{todo.created_at:%Y-%m-%d %H:%M}",
-        "updated_at": f"{todo.updated_at:%Y-%m-%d %H:%M}",
-        "done_at": f"{todo.done_at:%Y-%m-%d %H:%M}" if todo.done_at else "",
-        "pinned": "true" if todo.pinned else "false",
+def front_matter(note: Note) -> dict[str, str]:
+    """What the editor shows over a note's content, in this order; done_at only for a todo."""
+    fields = {
+        "created_at": f"{note.created_at:%Y-%m-%d %H:%M}",
+        "updated_at": f"{note.updated_at:%Y-%m-%d %H:%M}",
     }
+    if note.is_todo:
+        fields["done_at"] = f"{note.done_at:%Y-%m-%d %H:%M}" if note.done_at else ""
+    fields["pinned"] = "true" if note.pinned else "false"
+    return fields
 
 
 def long_date(moment: datetime) -> str:
@@ -95,26 +107,23 @@ def split_query(query: str) -> tuple[list[str], list[str]]:
     return words, tags
 
 
-def list_todos(connection: sqlite3.Connection, query: str = "", status: str = DEFAULT_STATUS) -> list[Todo]:
-    """The todos of a status (open, done or all) whose content has every word of the query outside
-    its tags (any case) and every #tag; the last updated first, pinned and done or not."""
-    where, params = [], []
+def list_notes(connection: sqlite3.Connection, kind: str, query: str = "", status: str = "all") -> list[Note]:
+    """The notes of a kind and a status (open, done or all) whose content has every word of the
+    query outside its tags (any case) and every #tag; the last updated first, pinned and done or not."""
+    where, params = ["kind = ?"], [kind]
     if status == "open":
         where.append("done_at IS NULL")
     elif status == "done":
         where.append("done_at IS NOT NULL")
     words, tags = split_query(query)
     for tag in tags:
-        where.append("EXISTS (SELECT 1 FROM json_each(todos.tags) WHERE value = ?)")
+        where.append("EXISTS (SELECT 1 FROM json_each(notes.tags) WHERE value = ?)")
         params.append(tag)
-    sql = "SELECT * FROM todos"
-    if where:
-        sql += " WHERE " + " AND ".join(where)
-    sql += " ORDER BY updated_at DESC, id DESC"
-    todos = [_todo(row) for row in connection.execute(sql, params)]
-    # Words are matched here rather than with LIKE, which cannot leave the tags out: there are few todos
+    sql = "SELECT * FROM notes WHERE " + " AND ".join(where) + " ORDER BY updated_at DESC, id DESC"
+    notes = [_note(row) for row in connection.execute(sql, params)]
+    # Words are matched here rather than with LIKE, which cannot leave the tags out: there are few notes
     words = [word.casefold() for word in words]
-    return [todo for todo in todos if all(word in without_tags(todo.content).casefold() for word in words)]
+    return [note for note in notes if all(word in without_tags(note.content).casefold() for word in words)]
 
 
 def without_tags(text: str) -> str:
@@ -125,61 +134,64 @@ def without_tags(text: str) -> str:
     return text
 
 
-def tag_counts(connection: sqlite3.Connection) -> list[tuple[str, int]]:
-    """Every tag with how many todos have it, the most used first."""
+def tag_counts(connection: sqlite3.Connection, kind: str) -> list[tuple[str, int]]:
+    """Every tag of the notes of a kind with how many have it, the most used first."""
     rows = connection.execute(
-        "SELECT value, count(*) FROM todos, json_each(todos.tags) GROUP BY value ORDER BY count(*) DESC, value"
+        "SELECT value, count(*) FROM notes, json_each(notes.tags) WHERE kind = ? GROUP BY value ORDER BY count(*) DESC, value",
+        (kind,),
     )
     return [(name, count) for name, count in rows]
 
 
-def get_todo(connection: sqlite3.Connection, todo_id: int) -> Todo | None:
-    row = connection.execute("SELECT * FROM todos WHERE id = ?", (todo_id,)).fetchone()
-    return _todo(row) if row else None
+def get_note(connection: sqlite3.Connection, note_id: int) -> Note | None:
+    row = connection.execute("SELECT * FROM notes WHERE id = ?", (note_id,)).fetchone()
+    return _note(row) if row else None
 
 
-def create_todo(connection: sqlite3.Connection, content: str) -> Todo:
+def create_note(connection: sqlite3.Connection, content: str, kind: str = NOTE) -> Note:
     now = timestamp(datetime.now())
     cursor = connection.execute(
-        "INSERT INTO todos (content, tags, created_at, updated_at) VALUES (?, ?, ?, ?)",
-        (content, json.dumps(tags_of(content)), now, now),
+        "INSERT INTO notes (kind, content, tags, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+        (kind, content, json.dumps(tags_of(content)), now, now),
     )
-    return get_todo(connection, cursor.lastrowid)
+    return get_note(connection, cursor.lastrowid)
 
 
-def update_todo(connection: sqlite3.Connection, todo_id: int, content: str) -> Todo | None:
-    """Save new content and the tags in it; None when the todo is gone."""
+def update_note(connection: sqlite3.Connection, note_id: int, content: str) -> Note | None:
+    """Save new content and the tags in it; None when the note is gone."""
     connection.execute(
-        "UPDATE todos SET content = ?, tags = ?, updated_at = ? WHERE id = ?",
-        (content, json.dumps(tags_of(content)), timestamp(datetime.now()), todo_id),
+        "UPDATE notes SET content = ?, tags = ?, updated_at = ? WHERE id = ?",
+        (content, json.dumps(tags_of(content)), timestamp(datetime.now()), note_id),
     )
-    return get_todo(connection, todo_id)
+    return get_note(connection, note_id)
 
 
-def set_done(connection: sqlite3.Connection, todo_id: int, done: bool) -> Todo | None:
-    """Mark done now, or not done; marking a done todo done again keeps when it was done.
+def set_done(connection: sqlite3.Connection, note_id: int, done: bool) -> Note | None:
+    """Mark a todo done now, or not done; marking a done todo done again keeps when it was done.
+    A plain note is never done, so it is left as it is.
 
     updated_at is left alone, here and when pinning: it says when the content last changed.
     """
     connection.execute(
-        "UPDATE todos SET done_at = CASE WHEN ? THEN coalesce(done_at, ?) END WHERE id = ?",
-        (done, timestamp(datetime.now()), todo_id),
+        "UPDATE notes SET done_at = CASE WHEN ? THEN coalesce(done_at, ?) END WHERE id = ? AND kind = ?",
+        (done, timestamp(datetime.now()), note_id, TODO),
     )
-    return get_todo(connection, todo_id)
+    return get_note(connection, note_id)
 
 
-def set_pinned(connection: sqlite3.Connection, todo_id: int, pinned: bool) -> Todo | None:
-    connection.execute("UPDATE todos SET pinned = ? WHERE id = ?", (pinned, todo_id))
-    return get_todo(connection, todo_id)
+def set_pinned(connection: sqlite3.Connection, note_id: int, pinned: bool) -> Note | None:
+    connection.execute("UPDATE notes SET pinned = ? WHERE id = ?", (pinned, note_id))
+    return get_note(connection, note_id)
 
 
-def delete_todo(connection: sqlite3.Connection, todo_id: int) -> None:
-    connection.execute("DELETE FROM todos WHERE id = ?", (todo_id,))
+def delete_note(connection: sqlite3.Connection, note_id: int) -> None:
+    connection.execute("DELETE FROM notes WHERE id = ?", (note_id,))
 
 
-def _todo(row: sqlite3.Row) -> Todo:
-    return Todo(
+def _note(row: sqlite3.Row) -> Note:
+    return Note(
         id=row["id"],
+        kind=row["kind"],
         content=row["content"],
         tags=tuple(json.loads(row["tags"])),
         pinned=bool(row["pinned"]),

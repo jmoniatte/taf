@@ -4,22 +4,25 @@ import unittest
 from pathlib import Path
 
 from fini.database import open_database
-from fini.todos import (
-    create_todo,
-    delete_todo,
+from fini.notes import (
+    NOTE,
+    TODO,
+    create_note,
+    delete_note,
     find_tags,
-    get_todo,
-    list_todos,
+    front_matter,
+    get_note,
+    list_notes,
     set_done,
     set_pinned,
     split_query,
     split_status,
     tag_counts,
     tags_of,
-    update_todo,
+    update_note,
     without_tags,
 )
-from fini.widgets.todos_table import ListColors, summary_text
+from fini.widgets.notes_table import ListColors, summary_text
 
 
 class TagsTest(unittest.TestCase):
@@ -29,7 +32,7 @@ class TagsTest(unittest.TestCase):
         self.assertEqual(split_query("passport #Home  renew #2"), (["passport", "renew", "#2"], ["home"]))
 
 
-class TodosTest(unittest.TestCase):
+class NotesTest(unittest.TestCase):
     def setUp(self) -> None:
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
@@ -37,50 +40,65 @@ class TodosTest(unittest.TestCase):
         self.addCleanup(self.db.close)
 
     def test_order_status_and_search(self) -> None:
-        old = create_todo(self.db, "Renew passport #home")
-        pinned = create_todo(self.db, "Review the PR #work")
-        newest = create_todo(self.db, "Plan the 100% trip #home #travel")
-        done = create_todo(self.db, "Pay taxes #home")
+        old = create_note(self.db, "Renew passport #home", TODO)
+        pinned = create_note(self.db, "Review the PR #work", TODO)
+        newest = create_note(self.db, "Plan the 100% trip #home #travel", TODO)
+        done = create_note(self.db, "Pay taxes #home", TODO)
         set_pinned(self.db, pinned.id, True)
         set_done(self.db, done.id, True)
         for minute, todo in enumerate((pinned, done, old, newest)):
-            self.db.execute("UPDATE todos SET updated_at = ? WHERE id = ?", (f"2026-09-30 10:0{minute}:00.000000", todo.id))
+            self.db.execute("UPDATE notes SET updated_at = ? WHERE id = ?", (f"2026-09-30 10:0{minute}:00.000000", todo.id))
         ids = lambda todos: [todo.id for todo in todos]  # noqa: E731
         # The last updated first; pinned and done change nothing
-        self.assertEqual(ids(list_todos(self.db)), [newest.id, old.id, pinned.id])
-        self.assertEqual(ids(list_todos(self.db, status="done")), [done.id])
-        self.assertEqual(ids(list_todos(self.db, status="all")), [newest.id, old.id, done.id, pinned.id])
+        self.assertEqual(ids(list_notes(self.db, TODO, status="open")), [newest.id, old.id, pinned.id])
+        self.assertEqual(ids(list_notes(self.db, TODO, status="done")), [done.id])
+        self.assertEqual(ids(list_notes(self.db, TODO, status="all")), [newest.id, old.id, done.id, pinned.id])
         # Every word, any case, and every tag
-        self.assertEqual(ids(list_todos(self.db, "RENEW pass", "all")), [old.id])
-        self.assertEqual(ids(list_todos(self.db, "#home", "all")), [newest.id, old.id, done.id])
-        self.assertEqual(ids(list_todos(self.db, "#home #travel", "all")), [newest.id])
-        self.assertEqual(ids(list_todos(self.db, "100%", "all")), [newest.id])
-        self.assertEqual(ids(list_todos(self.db, "1_0", "all")), [])
+        self.assertEqual(ids(list_notes(self.db, TODO, "RENEW pass", "all")), [old.id])
+        self.assertEqual(ids(list_notes(self.db, TODO, "#home", "all")), [newest.id, old.id, done.id])
+        self.assertEqual(ids(list_notes(self.db, TODO, "#home #travel", "all")), [newest.id])
+        self.assertEqual(ids(list_notes(self.db, TODO, "100%", "all")), [newest.id])
+        self.assertEqual(ids(list_notes(self.db, TODO, "1_0", "all")), [])
         # A word does not match a tag: "travel" is only a tag here, "home" only a tag, "trip" text
-        self.assertEqual(ids(list_todos(self.db, "travel", "all")), [])
-        self.assertEqual(ids(list_todos(self.db, "trip", "all")), [newest.id])
-        self.assertEqual(ids(list_todos(self.db, "HOM", "all")), [])
-        self.assertEqual(tag_counts(self.db), [("home", 3), ("travel", 1), ("work", 1)])
+        self.assertEqual(ids(list_notes(self.db, TODO, "travel", "all")), [])
+        self.assertEqual(ids(list_notes(self.db, TODO, "trip", "all")), [newest.id])
+        self.assertEqual(ids(list_notes(self.db, TODO, "HOM", "all")), [])
+        self.assertEqual(tag_counts(self.db, TODO), [("home", 3), ("travel", 1), ("work", 1)])
 
     def test_saving_rewrites_the_tags_done_keeps_its_first_time_and_delete_removes(self) -> None:
-        todo = create_todo(self.db, "Renew passport #home")
+        todo = create_note(self.db, "Renew passport #home", TODO)
         self.assertEqual((todo.tags, todo.pinned, todo.done), (("home",), False, False))
-        todo = update_todo(self.db, todo.id, "Renew passport #travel\n\nbefore #June")
+        todo = update_note(self.db, todo.id, "Renew passport #travel\n\nbefore #June")
         self.assertEqual(todo.tags, ("travel", "june"))
         self.assertEqual(todo.summary, "Renew passport #travel")
         done = set_done(self.db, todo.id, True)
         self.assertTrue(done.done)
-        self.db.execute("UPDATE todos SET done_at = '2026-01-01 08:00:00.000000'")
+        self.db.execute("UPDATE notes SET done_at = '2026-01-01 08:00:00.000000'")
         self.assertEqual(f"{set_done(self.db, todo.id, True).done_at}", "2026-01-01 08:00:00")
         self.assertIsNone(set_done(self.db, todo.id, False).done_at)
         self.assertTrue(set_pinned(self.db, todo.id, True).pinned)
         # Stored as JSON, in the Ruby fini's timestamp format
-        tags, created_at = sqlite3.connect(self.db.execute("PRAGMA database_list").fetchone()[2]).execute("SELECT tags, created_at FROM todos").fetchone()
+        tags, created_at = sqlite3.connect(self.db.execute("PRAGMA database_list").fetchone()[2]).execute("SELECT tags, created_at FROM notes").fetchone()
         self.assertEqual(tags, '["travel", "june"]')
         self.assertRegex(created_at, r"^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d\.000000$")
-        delete_todo(self.db, todo.id)
-        self.assertIsNone(get_todo(self.db, todo.id))
-        self.assertIsNone(update_todo(self.db, todo.id, "gone"))
+        delete_note(self.db, todo.id)
+        self.assertIsNone(get_note(self.db, todo.id))
+        self.assertIsNone(update_note(self.db, todo.id, "gone"))
+
+    def test_notes_and_todos_are_kept_apart_and_a_note_is_never_done(self) -> None:
+        todo = create_note(self.db, "Renew passport #home", TODO)
+        note = create_note(self.db, "Passport number is in the safe #home #papers")
+        self.assertEqual((note.kind, note.tags, note.is_todo), (NOTE, ("home", "papers"), False))
+        ids = lambda notes: [shown.id for shown in notes]  # noqa: E731
+        self.assertEqual(ids(list_notes(self.db, NOTE)), [note.id])
+        self.assertEqual(ids(list_notes(self.db, TODO)), [todo.id])
+        self.assertEqual(ids(list_notes(self.db, NOTE, "#home #papers")), [note.id])
+        self.assertEqual(tag_counts(self.db, NOTE), [("home", 1), ("papers", 1)])
+        self.assertEqual(tag_counts(self.db, TODO), [("home", 1)])
+        self.assertIsNone(set_done(self.db, note.id, True).done_at)
+        self.assertTrue(set_pinned(self.db, note.id, True).pinned)
+        self.assertEqual(list(front_matter(note)), ["created_at", "updated_at", "pinned"])
+        self.assertEqual(list(front_matter(todo)), ["created_at", "updated_at", "done_at", "pinned"])
 
 
 if __name__ == "__main__":
@@ -114,14 +132,14 @@ class SearchWordsTest(unittest.TestCase):
     def test_a_word_matches_the_text_but_not_the_tags(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             db = open_database(Path(tmp) / "fini.sqlite3")
-            tagged = create_todo(db, "Fix the docs #api")
-            text = create_todo(db, "Document the API")
-            rapid = create_todo(db, "Rapid fix")
-            code = create_todo(db, "Escape `#api` in markdown")
+            tagged = create_note(db, "Fix the docs #api", TODO)
+            text = create_note(db, "Document the API", TODO)
+            rapid = create_note(db, "Rapid fix", TODO)
+            code = create_note(db, "Escape `#api` in markdown", TODO)
             ids = lambda todos: sorted(todo.id for todo in todos)  # noqa: E731
-            self.assertEqual(ids(list_todos(db, "api")), ids([text, rapid, code]))
-            self.assertEqual(ids(list_todos(db, "#api")), [tagged.id])
-            self.assertEqual(ids(list_todos(db, "fix #api")), [tagged.id])
+            self.assertEqual(ids(list_notes(db, TODO, "api")), ids([text, rapid, code]))
+            self.assertEqual(ids(list_notes(db, TODO, "#api")), [tagged.id])
+            self.assertEqual(ids(list_notes(db, TODO, "fix #api")), [tagged.id])
             self.assertEqual(without_tags("a #b c"), "a   c")
             db.close()
 

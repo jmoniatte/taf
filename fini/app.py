@@ -17,13 +17,14 @@ from . import REPOSITORY_URL, __version__
 from .config import Config, load_config
 from .database import open_database
 from .screens import FiniHelpScreen
-from .widgets import LogsView, StatsView, TodosTab
+from .widgets import LogsView, NotesTab, StatsView, TodosTab
 
 STYLES_DIR = Path(__file__).parent / "styles"
 # tui-kit's stylesheets first, so the app's own rules win where they differ
 STYLE_FILES = (*tui_kit.STYLE_FILES, STYLES_DIR / "fini.tcss")
 # Each tab by name, with its label and view; the first one opens first
 TABS = {
+    "notes": ("Notes", NotesTab),
     "todos": ("Todos", TodosTab),
     "logs": ("Logs", LogsView),
     "stats": ("Stats", StatsView),
@@ -61,7 +62,7 @@ def load_stylesheet() -> str:
 
 
 class FiniApp(BaseApp):
-    """Todos and a log of the work done, one tab each."""
+    """Todos, notes and a log of the work done, one tab each."""
 
     TITLE = "Fini"
     VERSION = __version__
@@ -102,12 +103,12 @@ class FiniApp(BaseApp):
         # Over the right end of the tabs' row, which leaves it room for the tabs
         yield footer_button("Exit", "btn-exit", classes="tinted -red")
         # Under every tab: a rule, then Help on the right; a message takes Help's place while it shows.
-        # While a todo is on show, Close, back to the list, and Edit on the left
+        # While a note or a todo is on show, Close, back to the list, Edit and Delete on the left
         with Horizontal(id="app-footer"):
-            yield footer_button("Close", "btn-close-todo")
+            yield footer_button("Close", "btn-close-note")
             yield footer_button("Edit", "btn-edit", classes="tinted")
             yield footer_button("Delete", "btn-delete", classes="tinted -red")
-            # Only on the todos list, like the Refresh under yafyaf-tui's list
+            # Only on a list of notes or todos, like the Refresh under yafyaf-tui's list
             yield footer_button("Refresh", "btn-refresh", classes="tinted -green")
             yield footer_button("Help", "btn-help")
             yield FooterMessage()
@@ -119,41 +120,45 @@ class FiniApp(BaseApp):
 
     def action_help(self) -> None:
         """The app's keys on the left, the keys of the tab on show on the right."""
-        view = self.query_one("#tabs", TabbedContent).active_pane.children[0]
-        self.push_screen(FiniHelpScreen(*view.help_section()))
+        self.push_screen(FiniHelpScreen(*self.active_view.help_section()))
 
     @on(Button.Pressed, "#btn-exit")
     def _exit(self, event: Button.Pressed) -> None:
         event.stop()
         self.exit()
 
-    @on(Button.Pressed, "#btn-close-todo")
-    def _close_todo(self, event: Button.Pressed) -> None:
+    @property
+    def active_view(self):
+        """The view of the tab on show."""
+        return self.query_one("#tabs", TabbedContent).active_pane.children[0]
+
+    @on(Button.Pressed, "#btn-close-note")
+    def _close_note(self, event: Button.Pressed) -> None:
         event.stop()
-        self.query_one(TodosTab).show_list()
+        self.active_view.show_list()
 
     @on(Button.Pressed, "#btn-edit")
-    def _edit_todo(self, event: Button.Pressed) -> None:
+    def _edit_note(self, event: Button.Pressed) -> None:
         event.stop()
-        self.query_one(TodosTab).edit_viewed()
+        self.active_view.edit_viewed()
 
     @on(Button.Pressed, "#btn-delete")
-    def _delete_todo(self, event: Button.Pressed) -> None:
+    def _delete_note(self, event: Button.Pressed) -> None:
         event.stop()
-        self.query_one(TodosTab).delete_viewed()
+        self.active_view.delete_viewed()
 
     @on(Button.Pressed, "#btn-refresh")
-    def _refresh_todos(self, event: Button.Pressed) -> None:
+    def _refresh_notes(self, event: Button.Pressed) -> None:
         event.stop()
-        self.query_one(TodosTab).list.load()
+        self.active_view.list.load()
 
     def refresh_footer(self) -> None:
-        """Close, Edit and Delete show while a todo is on show, Refresh while the todos list is."""
-        view = self.query_one("#tabs", TabbedContent).active_pane.children[0]
+        """Close, Edit and Delete show while a note or a todo is on show, Refresh while their list is."""
+        view = self.active_view
         viewing = getattr(view, "viewing", None) is not None
-        for button in ("#btn-close-todo", "#btn-edit", "#btn-delete"):
+        for button in ("#btn-close-note", "#btn-edit", "#btn-delete"):
             self.query_one(button).display = viewing
-        self.query_one("#btn-refresh").display = isinstance(view, TodosTab) and not viewing
+        self.query_one("#btn-refresh").display = isinstance(view, NotesTab) and not viewing
 
     def on_mount(self) -> None:
         # The view keeps focus for its keys; tabs switch by click or with tab
@@ -172,7 +177,8 @@ class FiniApp(BaseApp):
     def apply_theme(self, theme_name: str) -> None:
         super().apply_theme(theme_name)
         # refresh_css only re-applies TCSS; the lists bake their colors into Rich text
-        self.query_one(TodosTab).set_colors()
+        for tab in self.query(NotesTab):
+            tab.set_colors()
         self.query_one(LogsView).set_colors()
         self.query_one(StatsView).set_colors()
 

@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════════════════════════
-   TABS - Todos and Logs fill the screen under the header
+   TABS - each fills the screen under the tabs' row
    ═══════════════════════════════════════════════════════════════════════ */
 
 #tabs {
@@ -10,7 +10,8 @@
     height: 1fr;
 }
 
-#todos-view,
+#notes-view,
+#notes-view,
 #logs-view,
 #stats-view {
     height: 1fr;
@@ -22,28 +23,28 @@
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
-   TODOS - YafYaf's list: search, Tags, status and New Todo over the rows
+   NOTES AND TODOS - YafYaf's list: search, Tags, a todo's status and New over the rows
    ═══════════════════════════════════════════════════════════════════════ */
 
-#todos-controls,
+#notes-controls,
 #stats-controls {
     height: auto;
     background: transparent;
 }
 
-#todos-view #search {
+#notes-list #search {
     width: 1fr;
     background: $bg;
     color: $fg;
     border: solid $gutter;
 }
 
-#todos-view #search:focus {
+#notes-list #search:focus {
     border: solid $blue;
 }
 
 /* The dropdowns are boxed like the search field next to them; their overlay opens below */
-#todos-controls Select,
+#notes-controls Select,
 #stats-controls Select {
     height: 3;
     margin: 0 0 0 2;
@@ -65,15 +66,15 @@
     width: 18;
 }
 
-#todos-controls #tag-selector {
+#notes-controls #tag-selector {
     width: 30;
 }
 
-#todos-controls #todo-status {
+#notes-controls #todo-status {
     width: 14;
 }
 
-#todos-controls Select SelectCurrent,
+#notes-controls Select SelectCurrent,
 #stats-controls Select SelectCurrent {
     background: $bg;
     border: solid $gutter;
@@ -81,12 +82,12 @@
     color: $fg;
 }
 
-#todos-controls Select:focus SelectCurrent,
+#notes-controls Select:focus SelectCurrent,
 #stats-controls Select:focus SelectCurrent {
     border: solid $blue;
 }
 
-#todos-controls Select SelectOverlay,
+#notes-controls Select SelectOverlay,
 #stats-controls Select SelectOverlay {
     background: $bg-dark;
     border: none;
@@ -94,7 +95,7 @@
     scrollbar-size: 0 0;
 }
 
-#todos-controls Select SelectOverlay > .option-list--option-highlighted,
+#notes-controls Select SelectOverlay > .option-list--option-highlighted,
 #stats-controls Select SelectOverlay > .option-list--option-highlighted {
     background: $bg-light;
     color: $fg;
@@ -102,29 +103,29 @@
 }
 
 /* The search box is 3 rows with its border; the top margin lines the button up with its text */
-#todos-controls .tinted {
+#notes-controls .tinted {
     margin: 1 0 0 3;
 }
 
-#todos-header {
+#notes-header {
     height: 1;
     color: $comment;
 }
 
-#todos-header-summary {
+#notes-header-summary {
     width: 1fr;
 }
 
-#todos-status {
+#notes-status {
     width: auto;
 }
 
-#todos-header-rule {
+#notes-header-rule {
     height: 1;
     color: $comment;
 }
 
-#todos-table {
+#notes-table {
     height: 1fr;
     background: transparent;
     color: $fg;
@@ -138,55 +139,55 @@
     overflow-x: hidden;
 }
 
-#todos-table > .datatable--cursor {
+#notes-table > .datatable--cursor {
     background: $bg-light;
     color: auto;
     text-style: none;
 }
 
-#todos-table > .datatable--hover {
+#notes-table > .datatable--hover {
     background: transparent;
 }
 
-#todos-list {
+#notes-list {
     height: 1fr;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
-   TODO DETAIL - one todo as markdown in place of the list, under its dates and pin
+   NOTE DETAIL - one note or todo as markdown in place of the list, under its date and pin
    ═══════════════════════════════════════════════════════════════════════ */
 
-#todo-detail {
+#note-detail {
     display: none;
     height: 1fr;
 }
 
-/* The check box and the star, as in the list, then when the todo was last updated, then a blank
+/* A todo's check box and the star, as in the list, then when the note was last updated, then a blank
    line before the content */
-#todo-detail-header {
+#note-detail-header {
     height: 1;
     margin-bottom: 1;
     color: $comment;
 }
 
-#todo-detail-done {
+#note-detail-done {
     width: 3;
 }
 
-#todo-detail-pin {
+#note-detail-pin {
     width: 3;
 }
 
-#todo-detail-pin.-pinned {
+#note-detail-pin.-pinned {
     color: $yellow;
 }
 
-#todo-detail-date {
+#note-detail-date {
     width: 1fr;
     color: $green;
 }
 
-#todo-detail-scroll {
+#note-detail-scroll {
     height: 1fr;
     scrollbar-size-vertical: 1;
     scrollbar-background: $bg;
@@ -198,13 +199,13 @@
 }
 
 /* Textual's markdown styles use its own theme variables; map them onto the palette, as yafyaf-tui does */
-#todo-detail-markdown {
+#note-detail-markdown {
     padding: 0;
     color: $fg;
 }
 
 /* Link styles do not inherit, so they go on the blocks that hold the text */
-#todo-detail-markdown MarkdownBlock {
+#note-detail-markdown MarkdownBlock {
     link-color: $blue;
     link-background: transparent;
     link-style: none;
@@ -213,33 +214,33 @@
     link-style-hover: underline;
 }
 
-#todo-detail-markdown MarkdownHeader {
+#note-detail-markdown MarkdownHeader {
     color: $yellow;
     text-style: bold;
     margin: 1 0 1 0;
 }
 
-#todo-detail-markdown MarkdownH1 {
+#note-detail-markdown MarkdownH1 {
     content-align: left middle;
     background: transparent;
     margin: 0 0 1 0;
 }
 
-#todo-detail-markdown MarkdownBlock > .code_inline {
+#note-detail-markdown MarkdownBlock > .code_inline {
     background: transparent;
     color: $orange;
 }
 
-#todo-detail-markdown MarkdownFence {
+#note-detail-markdown MarkdownFence {
     background: $bg-dark;
 }
 
-#todo-detail-markdown MarkdownBlockQuote {
+#note-detail-markdown MarkdownBlockQuote {
     background: $bg-dark;
     border-left: outer $comment;
 }
 
-#todo-detail-markdown MarkdownHorizontalRule {
+#note-detail-markdown MarkdownHorizontalRule {
     color: $gutter;
 }
 
@@ -315,7 +316,7 @@ FiniHelpScreen #shortcuts-general {
 }
 
 /* Neutral, like the Close button on tui-kit's panels */
-#btn-close-todo,
+#btn-close-note,
 #btn-help {
     width: auto;
     min-width: 0;
@@ -327,7 +328,7 @@ FiniHelpScreen #shortcuts-general {
     color: $fg;
 }
 
-#btn-close-todo:hover,
+#btn-close-note:hover,
 #btn-help:hover {
     background: $gutter;
 }
@@ -344,8 +345,8 @@ Screen {
     margin: 0 1 0 0;
 }
 
-/* Only while a todo is on show (FiniApp.refresh_footer); Edit is tui-kit's blue tinted button */
-#btn-close-todo,
+/* Only while a note is on show, or its list for Refresh (FiniApp.refresh_footer) */
+#btn-close-note,
 #btn-edit,
 #btn-delete,
 #btn-refresh {

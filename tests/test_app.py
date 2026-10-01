@@ -12,9 +12,9 @@ from tui_kit.theme import list_themes, load_palette
 from fini.app import TABS, FiniApp, FooterMessage, load_stylesheet
 from fini.config import Config
 from fini.database import open_database
-from fini.todos import create_todo
+from fini.notes import TODO, create_note
 from fini.widgets.stats_view import ALL_ACTIONS
-from fini.widgets import LogsScroll, StatsScroll, StatsView, TodosTable
+from fini.widgets import LogsScroll, NotesTab, NotesTable, StatsScroll, StatsView, TodosTab
 
 # The Logs tab shows the last 7 days, so the logs are dated from today
 TODAY = date.today()
@@ -57,24 +57,29 @@ class AppTest(unittest.TestCase):
             # No title bar
             self.assertFalse(app.query("#app-header"))
             self.assertEqual(tabs.region.y, 0)
-            self.assertEqual([str(tabs.get_tab(f"{name}-tab").label) for name in TABS], ["Todos", "Logs", "Stats"])
-            self.assertEqual((app.tab, tabs.active), ("todos", "todos-tab"))
+            self.assertEqual([str(tabs.get_tab(f"{name}-tab").label) for name in TABS], ["Notes", "Todos", "Logs", "Stats"])
+            self.assertEqual((app.tab, tabs.active), ("notes", "notes-tab"))
             self.assertFalse(app.tabs.can_focus)
+            # The list takes focus for its keys
+            self.assertIsInstance(app.focused, NotesTable)
+            await pilot.press("tab")
+            await pilot.pause()
+            self.assertEqual((app.tab, tabs.active), ("todos", "todos-tab"))
+            self.assertIsInstance(app.focused.parent.parent, TodosTab)
             await pilot.press("tab")
             await pilot.pause()
             self.assertEqual((app.tab, tabs.active), ("logs", "logs-tab"))
-            # The list takes focus for its keys
             self.assertIsInstance(app.focused, LogsScroll)
             await pilot.press("tab", "tab")
             await pilot.pause()
-            self.assertEqual(app.tab, "todos")
-            self.assertIsInstance(app.focused, TodosTable)
+            self.assertEqual(app.tab, "notes")
+            self.assertIsInstance(app.focused.parent.parent, NotesTab)
 
         self.run_app(body)
 
     def test_logs_show_by_day_like_the_ruby_fini(self) -> None:
         async def body(app, pilot) -> None:
-            await pilot.press("tab")
+            await pilot.press("tab", "tab")
             await pilot.pause()
             text = app.query_one("#logs-text", Static)
             self.assertEqual(
@@ -100,7 +105,7 @@ class AppTest(unittest.TestCase):
 
     def test_logs_can_be_selected_with_the_mouse_and_copied_with_y(self) -> None:
         async def body(app, pilot) -> None:
-            await pilot.press("tab")
+            await pilot.press("tab", "tab")
             await pilot.pause()
             text = app.query_one("#logs-text", Static)
             # From "15:13" on the first log to "Reviewed PR" on the second
@@ -161,6 +166,12 @@ class AppTest(unittest.TestCase):
 
         async def body(app, pilot) -> None:
             general = ["?", "t", "y", "tab", "q"]
+            # Notes have no status: no x, no f
+            self.assertEqual(
+                await help_keys(app, pilot), {"GENERAL": general, "NOTES": ["n", "e", "⇧+enter", "p", "space", "/", "#", "r", "y", "enter", "j", "k"]}
+            )
+            await pilot.press("tab")
+            await pilot.pause()
             self.assertEqual(
                 await help_keys(app, pilot),
                 {"GENERAL": general, "TODOS": ["n", "e", "⇧+enter", "x", "p", "space", "f", "/", "#", "r", "y", "enter", "j", "k"]},
@@ -168,7 +179,7 @@ class AppTest(unittest.TestCase):
             self.assertEqual(app.tab, "todos")
             # One todo on show: its own keys
             with open_database(app.config.database_path) as database:
-                create_todo(database, "A todo")
+                create_note(database, "A todo", TODO)
             database.close()
             await pilot.press("r", "enter")
             await pilot.pause()
@@ -188,7 +199,7 @@ class AppTest(unittest.TestCase):
 
     def test_stats_show_the_time_per_action_and_switch_period_and_action(self) -> None:
         async def body(app, pilot) -> None:
-            await pilot.press("tab", "tab")
+            await pilot.press("tab", "tab", "tab")
             await pilot.pause()
             self.assertIsInstance(app.focused, StatsScroll)
             period = app.query_one("#stats-period", Select)
@@ -239,7 +250,7 @@ class AppTest(unittest.TestCase):
             self.assertEqual(str(exit_button.label), "Exit")
             self.assertTrue(exit_button.has_class("tinted", "-red"))
             # Close and Edit are only for a todo on show
-            self.assertFalse(app.query_one("#btn-close-todo").display or app.query_one("#btn-edit").display)
+            self.assertFalse(app.query_one("#btn-close-note").display or app.query_one("#btn-edit").display)
             await pilot.click("#btn-exit")
             await pilot.pause()
             self.assertFalse(app.is_running)

@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from fini.database import MIGRATIONS, open_database, version
+from fini.database import MIGRATIONS, migrate, open_database, version
 
 # The schema a Ruby fini database has, as read from one with sqlite_master
 RUBY_SCHEMA = """
@@ -70,6 +70,21 @@ class DatabaseTest(unittest.TestCase):
         open_database(path).close()
         self.assertEqual(path.read_bytes(), before)
         self.assertFalse(backup.exists())
+
+    def test_todos_become_notes_of_the_kind_todo(self) -> None:
+        connection = sqlite3.connect(":memory:")
+        for sql in MIGRATIONS[:2]:
+            connection.executescript(sql)
+        connection.execute("PRAGMA user_version = 2")
+        connection.execute(
+            "INSERT INTO todos (content, tags, done_at, created_at, updated_at) VALUES ('Pay taxes', '[]', NULL, '2026-09-30 10:00:00.000000', '2026-09-30 10:00:00.000000')"
+        )
+        migrate(connection)
+        self.assertEqual(connection.execute("SELECT kind, content FROM notes").fetchall(), [("todo", "Pay taxes")])
+        self.assertFalse(connection.execute("SELECT 1 FROM sqlite_master WHERE name = 'todos'").fetchall())
+        connection.execute("INSERT INTO notes (content, created_at, updated_at) VALUES ('x', '', '')")
+        self.assertEqual(connection.execute("SELECT kind FROM notes WHERE content = 'x'").fetchone(), ("note",))
+        connection.close()
 
 
 if __name__ == "__main__":

@@ -1,4 +1,5 @@
-"""The Todos tab's table: a check box and a star, then the summary with its links and tags."""
+"""The table of the Todos and Notes tabs: a todo's check box and the star, then the summary with its
+links and tags."""
 
 import re
 from dataclasses import dataclass
@@ -11,15 +12,13 @@ from textual.message import Message
 from textual.widgets import DataTable
 from tui_kit.shortcuts import ACTIONS, GENERAL
 
-from ..todos import Todo, find_tags
+from ..notes import TODO, Note, find_tags
 
 # Nerd Font check boxes (nf-md-checkbox_blank_outline, nf-md-checkbox_marked), as outils uses Nerd Font icons
 OPEN = "\U000f0131"
 DONE = "\U000f0132"
 PINNED = "★"
 UNPINNED = "☆"
-# The check box, two spaces, the star
-LEAD_WIDTH = 4
 HEADING = re.compile(r"#{1,6}\s+(.*?)(?:\s+#+)?\s*$")
 # A markdown link, or a bare URL; trailing punctuation and closing brackets are left out of a bare URL
 LINK = re.compile(r"\[(?P<label>[^\]]+)\]\((?P<target>[^)\s]+)\)|(?P<url>https?://[^\s<>()\[\]]*[^\s<>()\[\].,;:!?'\"])")
@@ -36,16 +35,16 @@ class ListColors:
     heading: str = ""
     tag: str = ""
     code: str = ""
-    # The todo's tags shown after its text
+    # The note's tags shown after its text
     extra_tag: str = ""
 
 
-class TodoChangeRequested(Message):
-    """The user marked a todo done or not done, or pinned or unpinned it; None leaves that field as it is."""
+class NoteChangeRequested(Message):
+    """The user marked a todo done or not done, or pinned or unpinned a note; None leaves that field as it is."""
 
-    def __init__(self, todo: Todo, done: bool | None = None, pinned: bool | None = None) -> None:
+    def __init__(self, note: Note, done: bool | None = None, pinned: bool | None = None) -> None:
         super().__init__()
-        self.todo = todo
+        self.note = note
         self.done = done
         self.pinned = pinned
 
@@ -61,7 +60,7 @@ class TagSelected(Message):
 def summary_text(summary: str, colors: ListColors, *, done: bool = False, tags: tuple[str, ...] = ()) -> Text:
     """Links by their label in the link color, inline code without its backticks in the code color,
     a markdown heading without its # marks, tags in the tag color with their name in the style's
-    meta for a click, then the todo's other tags, those not in the summary, in the extra tag color;
+    meta for a click, then the note's other tags, those not in the summary, in the extra tag color;
     all of it gray once done."""
     heading = HEADING.match(summary)
     if heading:
@@ -93,63 +92,71 @@ def summary_text(summary: str, colors: ListColors, *, done: bool = False, tags: 
     return text
 
 
-class TodosTable(DataTable):
-    """One row per todo, keyed by its id. A click on the check box or the star changes the todo,
-    on a tag filters the list, on a link opens it."""
+def lead_width(kind: str) -> int:
+    """A todo's check box, two spaces, the star; a note has only the star."""
+    return 4 if kind == TODO else 1
+
+
+class NotesTable(DataTable):
+    """One row per note of a kind, keyed by its id. A click on a todo's check box or the star changes
+    the note, on a tag filters the list, on a link opens it."""
 
     BINDINGS = [
-        Binding("enter", "select_cursor", "View todo", show=False, group=ACTIONS),
+        Binding("enter", "select_cursor", "View", show=False, group=ACTIONS),
         Binding("j", "cursor_down", "Move down", show=False, group=GENERAL),
         Binding("k", "cursor_up", "Move up", show=False, group=GENERAL),
     ]
 
-    def __init__(self, colors: ListColors, **kwargs) -> None:
+    def __init__(self, kind: str, colors: ListColors, **kwargs) -> None:
         super().__init__(cursor_type="row", zebra_stripes=False, show_header=False, cursor_foreground_priority="renderable", **kwargs)
+        self.kind = kind
         self._colors = colors
-        self.todos: list[Todo] = []
-        # Clicks in the first column left of this x hit the box, the others the star
-        self._star_x = self.cell_padding + 2
+        self.notes: list[Note] = []
+        # Clicks on a todo's first column left of this x hit the box, the others the star
+        self._star_x = self.cell_padding + 2 if kind == TODO else 0
 
     def on_mount(self) -> None:
-        self.add_column("", key="lead", width=LEAD_WIDTH)
-        self.add_column("Todo", key="summary")
+        self.add_column("", key="lead", width=lead_width(self.kind))
+        self.add_column("Summary", key="summary")
 
-    def show(self, todos: list[Todo], colors: ListColors | None = None, cursor_on: int | None = None) -> None:
-        """Show the todos, with the cursor on the todo cursor_on names, else on the todo it was on,
+    def show(self, notes: list[Note], colors: ListColors | None = None, cursor_on: int | None = None) -> None:
+        """Show the notes, with the cursor on the note cursor_on names, else on the note it was on,
         else on the same row."""
         self._colors = colors or self._colors
-        current = self.todos[self.cursor_row].id if 0 <= self.cursor_row < len(self.todos) else None
+        current = self.notes[self.cursor_row].id if 0 <= self.cursor_row < len(self.notes) else None
         current = cursor_on or current
         row = self.cursor_row
         self.clear()
-        self.todos = list(todos)
-        for todo in todos:
+        self.notes = list(notes)
+        for note in notes:
             # Text, not str: the table reads strings as markup, which eats brackets in a summary
-            self.add_row(self._lead(todo), self._summary(todo), key=str(todo.id))
-        ids = [todo.id for todo in todos]
+            self.add_row(self._lead(note), self._summary(note), key=str(note.id))
+        ids = [note.id for note in notes]
         if ids:
             self.move_cursor(row=ids.index(current) if current in ids else min(max(row, 0), len(ids) - 1))
 
-    def replace(self, todo: Todo) -> None:
-        """Show the todo's new state in its row, which stays where it is."""
-        for index, shown in enumerate(self.todos):
-            if shown.id == todo.id:
-                self.todos[index] = todo
-                self.update_cell(str(todo.id), "lead", self._lead(todo))
-                self.update_cell(str(todo.id), "summary", self._summary(todo))
+    def replace(self, note: Note) -> None:
+        """Show the note's new state in its row, which stays where it is."""
+        for index, shown in enumerate(self.notes):
+            if shown.id == note.id:
+                self.notes[index] = note
+                self.update_cell(str(note.id), "lead", self._lead(note))
+                self.update_cell(str(note.id), "summary", self._summary(note))
                 return
 
-    def selected(self) -> Todo | None:
-        return self.todos[self.cursor_row] if 0 <= self.cursor_row < len(self.todos) else None
+    def selected(self) -> Note | None:
+        return self.notes[self.cursor_row] if 0 <= self.cursor_row < len(self.notes) else None
 
-    def _lead(self, todo: Todo) -> Text:
-        text = Text(DONE if todo.done else OPEN, style=self._colors.date)
-        text.append("  ")
-        text.append(PINNED if todo.pinned else UNPINNED, style=self._colors.heading if todo.pinned else self._colors.date)
+    def _lead(self, note: Note) -> Text:
+        text = Text(style=self._colors.date)
+        if note.is_todo:
+            text.append(DONE if note.done else OPEN)
+            text.append("  ")
+        text.append(PINNED if note.pinned else UNPINNED, style=self._colors.heading if note.pinned else self._colors.date)
         return text
 
-    def _summary(self, todo: Todo) -> Text:
-        return summary_text(todo.summary, self._colors, done=todo.done, tags=todo.tags)
+    def _summary(self, note: Note) -> Text:
+        return summary_text(note.summary, self._colors, done=note.done, tags=note.tags)
 
     def on_mouse_move(self, event: events.MouseMove) -> None:
         # The highlight follows the pointer, as it does with the arrow keys
@@ -160,19 +167,20 @@ class TodosTable(DataTable):
     async def _on_click(self, event: events.Click) -> None:
         """A click on the box marks done, on the star pins, by which half of the first column it hit:
         a terminal may draw the Nerd Font box wider than its cell, so the cell clicked is not always
-        the one the icon was written to. A tag filters, a link opens, anything else opens the todo."""
+        the one the icon was written to; a note's first column is all star. A tag filters, a link
+        opens, anything else opens the note."""
         row = event.style.meta.get("row")
         if not (isinstance(row, int) and 0 <= row < self.row_count):
             return
         event.prevent_default()
         event.stop()
-        todo = self.todos[row]
+        note = self.notes[row]
         self.move_cursor(row=row)
         if event.style.meta.get("column") == 0:
             if event.x < self._star_x:
-                self.post_message(TodoChangeRequested(todo, done=not todo.done))
+                self.post_message(NoteChangeRequested(note, done=not note.done))
             else:
-                self.post_message(TodoChangeRequested(todo, pinned=not todo.pinned))
+                self.post_message(NoteChangeRequested(note, pinned=not note.pinned))
         elif tag := event.style.meta.get("tag"):
             self.post_message(TagSelected(tag))
         elif event.style.link:
