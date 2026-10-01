@@ -97,8 +97,8 @@ Help comes back once it clears. Copied from outils.
 
 The Todos tab is YafYaf's yaf list (yafyaf-tui's `YafsView`) on the local database, and the todos
 YafYaf had for a while (kept in a stash in yafyaf-tui and yafyaf, "Todos tab" and "Todos API").
-`TodosView` is a search box, the Tags dropdown, the status dropdown (Open, Done, All; Open by
-default) and New Todo, over a header with the count ("2 open todos", "1 todo matching 'x'"), a
+`TodosView` is a search box, the Tags dropdown, the status dropdown (Open, Done, All) and New
+Todo, over a header with the count ("2 open todos", "1 todo matching 'x'"), a
 dashed rule and `TodosTable`. A row is a check box and a star (Nerd Font `󰄱`/`󰄲`, `☆`/`★`), then
 the summary: the first line with text, links by their label in blue, inline
 code without its backticks in orange (as in the view), a markdown heading without its `#`s in yellow, tags in purple, then the todo's tags that are not
@@ -110,15 +110,26 @@ A todo is `content`, `tags`, `pinned`, `done_at` (done is `done_at` being set; m
 todo done again keeps the first time), `created_at` and `updated_at`. `tags` is a JSON array,
 `["home", "work"]`, of the `#tags` in the content (YafYaf's rule, `todos.TAG`: a letter after the
 `#`, not glued to what precedes it, never in inline code), rewritten on every save, so the Tags
-dropdown's counts and a `#tag` in the search are SQL over `json_each`. A search keeps the todos
-whose content has every plain word (`LIKE`, case ignored for ASCII) and every `#tag`.
+dropdown's counts and a `#tag` in the search are SQL over `json_each`. The status is in the search, as on GitHub:
+`is:open` (the search starts with it) or `is:done` (`is:closed` too), and none for all
+(`todos.split_status`; the last one wins). The status dropdown only mirrors it: `TodosView.load`
+sets the dropdown from the search, and picking a status, or `f`, puts `is:open` or `is:done` first
+in the search in place of the one there, or takes it out for All. A search keeps the todos
+that have every `#tag` (SQL) and whose content, its tags left out (`todos.without_tags`), has
+every plain word, case ignored (in Python, as `LIKE` cannot leave the tags out; there are few
+todos): "api" finds "the API" and "rapid", not "#api", which `#api` finds.
 
 Keys, on the list: `n` (or New Todo) writes a new todo, Enter (or a click on a row) shows the
 highlighted one, `e` or Shift+Enter edits it. `x` marks done or not, `p` or space pins or not, `f`
 cycles Open, Done, All, `/` goes to the search (Enter runs it, Escape goes back), `#` opens Tags,
 `r` reloads, `y` copies the todo. A click on the box marks done, on the star pins, by which half
 of the first column it hit, since Alacritty draws the Nerd Font box wider than its cell; a click
-on a tag adds it to the search, on a link opens it. Marking done and pinning change the box or the
+on a tag puts it in the search, on a link opens it. Picking a tag, by a click, in the view or from
+the Tags dropdown, replaces any tag already in the search and keeps its words
+(`TodosView.add_tag`): a todo has one tag at most, so two would find nothing. Like the
+status dropdown, Tags mirrors the search: it shows the search's tag, or "Any tag", its first choice,
+when there is none (or one no todo has); picking it takes the tag out of the search, as All takes
+`is:` out. It has no blank "Tags" choice. Marking done and pinning change the box or the
 star in the row and move nothing, which would be confusing: the status filter applies on the next
 load (a todo marked done stays on the Open list, gray, until then). Neither changes `updated_at`, which
 says when the content last changed.

@@ -8,9 +8,25 @@ from textual.message import Message
 from textual.widgets import Button, DataTable, Input, Select, Static
 from tui_kit.shortcuts import ACTIONS
 
-from ..todos import DEFAULT_STATUS, STATUSES, Todo, list_todos, set_done, set_pinned, tag_counts
+from ..todos import (
+    DEFAULT_STATUS,
+    STATUS_WORD,
+    STATUSES,
+    TAG,
+    Todo,
+    list_todos,
+    set_done,
+    set_pinned,
+    split_query,
+    split_status,
+    tag_counts,
+)
 from .dashed_rule import DashedRule
 from .todos_table import LEAD_WIDTH, ListColors, TagSelected, TodoChangeRequested, TodosTable
+
+
+# The Tags dropdown's first choice, which takes the tag out of the search; not a tag name, which has no space
+ANY_TAG = "any tag"
 
 
 class TodoOpened(Message):
@@ -55,13 +71,16 @@ class TodosView(Vertical):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
         self.status = DEFAULT_STATUS
-        self.query_text = ""
+        # The search box's text, is:open or is:done and #tag included: the dropdowns only mirror it
+        self.query_text = f"is:{DEFAULT_STATUS}"
+        # The search's tag, or None for any
+        self.tag: str | None = None
 
     def compose(self) -> ComposeResult:
         with Horizontal(id="todos-controls"):
-            yield Input(placeholder="Search todos", id="search")
-            # Picking a tag types "#name" into the search; the dropdown itself never stays selected
-            yield Select([], prompt="Tags", id="tag-selector")
+            yield Input(self.query_text, placeholder="Search todos", id="search")
+            # The search's tag, or Any tag; picking one puts "#name" in the search
+            yield Select([("Any tag", ANY_TAG)], value=ANY_TAG, allow_blank=False, id="tag-selector")
             yield Select(STATUSES, value=DEFAULT_STATUS, allow_blank=False, id="todo-status")
             yield Button("New Todo", id="btn-new-todo", classes="tinted")
         # The table's own header cannot hold the count, so it is hidden and drawn here instead
@@ -104,19 +123,32 @@ class TodosView(Vertical):
         cursor goes to the todo cursor_on names when it is listed."""
         if query is not None:
             self.query_text = query.strip()
+        self.status, words = split_status(self.query_text)
+        tags = split_query(words)[1]
+        self.tag = tags[-1] if tags else None
+        # Changed here, not chosen: no message
+        status = self.query_one("#todo-status", Select)
+        with status.prevent(Select.Changed):
+            status.value = self.status
         if self.database is None:
             self._set_status(self.app.database_error)
             return
-        todos = list_todos(self.database, self.query_text, self.status)
+        todos = list_todos(self.database, words, self.status)
         self.table.show(todos, cursor_on=cursor_on)
-        self.query_one("#tag-selector", Select).set_options((f"{name} ({count})", name) for name, count in tag_counts(self.database))
+        counts = tag_counts(self.database)
+        selector = self.query_one("#tag-selector", Select)
+        # Changed here, not chosen: no message. A tag no todo has is not in the list: "Any tag" stands for it
+        with selector.prevent(Select.Changed):
+            selector.set_options([("Any tag", ANY_TAG), *((f"{name} ({count})", name) for name, count in counts)])
+            selector.value = self.tag if self.tag in dict(counts) else ANY_TAG
         self._set_status(self._describe(len(todos)))
 
     def _describe(self, count: int) -> str:
         noun = "todo" if count == 1 else "todos"
         status = "" if self.status == "all" else f" {self.status}"
         text = f"{count}{status} {noun}"
-        return f"{text} matching '{self.query_text}'" if self.query_text else text
+        words = split_status(self.query_text)[1]
+        return f"{text} matching '{words}'" if words else text
 
     def _set_status(self, text: str) -> None:
         self.query_one("#todos-status", Static).update(text)
@@ -153,17 +185,15 @@ class TodosView(Vertical):
     @on(Select.Changed, "#tag-selector")
     def _tag_picked(self, event: Select.Changed) -> None:
         event.stop()
-        if event.value is Select.NULL:
-            return
-        event.select.clear()
-        self.add_tag(str(event.value))
+        self.add_tag(None if event.value == ANY_TAG else str(event.value))
 
-    def add_tag(self, name: str) -> None:
-        """Add "#name" to the search and run it; how every way of picking a tag ends up."""
+    def add_tag(self, name: str | None) -> None:
+        """Put "#name" in the search in place of any other tag, or only take them out for None (Any tag),
+        keep its words, and run it; how every way of picking a tag ends up. A todo has one tag at
+        most, so two would find nothing."""
         search = self.query_one("#search", Input)
-        token = f"#{name}"
-        if token not in search.value.split():
-            search.value = f"{search.value.rstrip()} {token}".strip()
+        words = [word for word in search.value.split() if not TAG.fullmatch(word)]
+        search.value = " ".join([*words, f"#{name}"] if name else words)
         self.table.focus()
         self.load(search.value)
 
@@ -173,12 +203,15 @@ class TodosView(Vertical):
 
     @on(Select.Changed, "#todo-status")
     def _status_picked(self, event: Select.Changed) -> None:
+        """Put is:open or is:done first in the search in place of the one there, or none for All, and run it."""
         event.stop()
         if event.value == self.status:
             return
-        self.status = str(event.value)
+        search = self.query_one("#search", Input)
+        words = [word for word in search.value.split() if not STATUS_WORD.fullmatch(word)]
+        search.value = " ".join([f"is:{event.value}", *words] if event.value != "all" else words)
         self.table.focus()
-        self.load()
+        self.load(search.value)
 
     # -- changing todos
 

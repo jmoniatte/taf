@@ -67,6 +67,22 @@ def tags_of(content: str) -> list[str]:
     return list(dict.fromkeys(name for _, _, name in find_tags(content)))
 
 
+# is:open or is:done in a search, like GitHub's is:open and is:closed, which means done here too
+STATUS_WORD = re.compile(r"is:(?P<status>open|done|closed)", re.IGNORECASE)
+
+
+def split_status(query: str) -> tuple[str, str]:
+    """The status a search asks for with is:open or is:done (all without one; the last one wins),
+    and the search without it."""
+    status, words = "all", []
+    for word in query.split():
+        if match := STATUS_WORD.fullmatch(word):
+            status = "done" if match.group("status").lower() in ("done", "closed") else "open"
+        else:
+            words.append(word)
+    return status, " ".join(words)
+
+
 def split_query(query: str) -> tuple[list[str], list[str]]:
     """A search's plain words, and its #tags; like YafYaf, a tag is a whole word."""
     words, tags = [], []
@@ -80,8 +96,8 @@ def split_query(query: str) -> tuple[list[str], list[str]]:
 
 
 def list_todos(connection: sqlite3.Connection, query: str = "", status: str = DEFAULT_STATUS) -> list[Todo]:
-    """The todos of a status (open, done or all) whose content has every word of the query and
-    every #tag; the last updated first, pinned and done or not."""
+    """The todos of a status (open, done or all) whose content has every word of the query outside
+    its tags (any case) and every #tag; the last updated first, pinned and done or not."""
     where, params = [], []
     if status == "open":
         where.append("done_at IS NULL")
@@ -91,15 +107,22 @@ def list_todos(connection: sqlite3.Connection, query: str = "", status: str = DE
     for tag in tags:
         where.append("EXISTS (SELECT 1 FROM json_each(todos.tags) WHERE value = ?)")
         params.append(tag)
-    for word in words:
-        # LIKE ignores case for ASCII; % and _ in the word are matched as typed
-        where.append("content LIKE ? ESCAPE '\\'")
-        params.append("%" + re.sub(r"([\\%_])", r"\\\1", word) + "%")
     sql = "SELECT * FROM todos"
     if where:
         sql += " WHERE " + " AND ".join(where)
     sql += " ORDER BY updated_at DESC, id DESC"
-    return [_todo(row) for row in connection.execute(sql, params)]
+    todos = [_todo(row) for row in connection.execute(sql, params)]
+    # Words are matched here rather than with LIKE, which cannot leave the tags out: there are few todos
+    words = [word.casefold() for word in words]
+    return [todo for todo in todos if all(word in without_tags(todo.content).casefold() for word in words)]
+
+
+def without_tags(text: str) -> str:
+    """text with its #tags blanked out, so a search for "api" does not find "#api"; a #word in
+    inline code is not a tag, so it stays."""
+    for start, end, _ in reversed(find_tags(text)):
+        text = text[:start] + " " + text[end:]
+    return text
 
 
 def tag_counts(connection: sqlite3.Connection) -> list[tuple[str, int]]:

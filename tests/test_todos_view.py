@@ -107,14 +107,66 @@ class TodosViewTest(unittest.TestCase):
 
             # The Tags dropdown lists the tags with counts; picking one adds it to the search
             tags = app.query_one("#tag-selector", Select)
-            self.assertEqual([str(prompt) for prompt, _ in tags._options[1:]], ["home (1)", "work (1)"])
+            # No "Tags" placeholder in the list: Any stands for no tag
+            self.assertEqual([str(prompt) for prompt, _ in tags._options], ["Any tag", "home (1)", "work (1)"])
+            self.assertEqual(tags.value, "any tag")
             app.query_one("#search", Input).value = ""
             tags.value = "work"
             await pilot.pause()
             self.assertEqual((app.query_one("#search", Input).value, self.summaries(app)), ("#work", ["Review the PR #work"]))
-            self.assertIs(tags.value, Select.NULL)
+            # It shows the search's tag, as the status dropdown shows its status
+            self.assertEqual(tags.value, "work")
+            # Another tag takes the place of the one in the search; its words stay
+            app.query_one("#search", Input).value = "renew #work"
+            tags.value = "home"
+            await pilot.pause()
+            self.assertEqual((app.query_one("#search", Input).value, self.summaries(app)), ("renew #home", ["Renew passport #home"]))
+            # Any takes the tag out, as All does the status
+            app.query_one("#search", Input).value = "is:open renew #home"
+            tags.value = "any tag"
+            await pilot.pause()
+            self.assertEqual((app.query_one("#search", Input).value, self.summaries(app)), ("is:open renew", ["Renew passport #home"]))
+            self.assertEqual(tags.value, "any tag")
+            # A tag typed in the search shows there too; one no todo has shows as Any, and stays in the search
+            for typed, shown in (("#home", "home"), ("#ghost", "any tag")):
+                await pilot.press("slash")
+                app.query_one("#search", Input).value = typed
+                await pilot.press("enter")
+                await pilot.pause()
+                self.assertEqual((tags.value, app.query_one("#search", Input).value), (shown, typed))
 
         self.run_app(body, todos=("Renew passport #home", "Review the PR #work", "Plan the trip"))
+
+    def test_the_status_lives_in_the_search_as_is_open_or_is_done(self) -> None:
+        async def body(app, pilot) -> None:
+            search = app.query_one("#search", Input)
+            status = app.query_one("#todo-status", Select)
+            set_done(self.db, self.made[0].id, True)
+            await pilot.press("r")
+            await pilot.pause()
+            # Open by default, and the search says so
+            self.assertEqual((search.value, status.value, self.summaries(app)), ("is:open", "open", ["Ship the API"]))
+            # The dropdown, or f, puts its status first in the search in place of the other; All takes it out
+            search.value = "is:open #work"
+            status.value = "done"
+            await pilot.pause()
+            self.assertEqual((search.value, self.summaries(app), self.status(app)), ("is:done #work", ["Fix the docs #work"], "1 done todo matching '#work'"))
+            await pilot.press("f")
+            await pilot.pause()
+            self.assertEqual((search.value, status.value), ("#work", "all"))
+            await pilot.press("f")
+            await pilot.pause()
+            self.assertEqual(search.value, "is:open #work")
+            # Typed in the search, it sets the dropdown; is:closed means done, as on GitHub, and no is: means all
+            for typed, expected in (("is:closed docs", "done"), ("api", "all"), ("IS:OPEN", "open")):
+                await pilot.press("slash")
+                search.value = typed
+                await pilot.press("enter")
+                await pilot.pause()
+                self.assertEqual(status.value, expected)
+            self.assertEqual(self.summaries(app), ["Ship the API"])
+
+        self.run_app(body, todos=("Fix the docs #work", "Ship the API"))
 
     def test_the_refresh_button_reloads_the_list_and_shows_only_there(self) -> None:
         async def body(app, pilot) -> None:
@@ -155,7 +207,7 @@ class TodosViewTest(unittest.TestCase):
             # A tag filters on it
             await pilot.click(table, offset=(10, 0))
             await pilot.pause()
-            self.assertEqual(app.query_one("#search", Input).value, "#home")
+            self.assertEqual(app.query_one("#search", Input).value, "is:open #home")
 
         self.run_app(body, todos=("#home chores",))
 

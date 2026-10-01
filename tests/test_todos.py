@@ -13,9 +13,11 @@ from fini.todos import (
     set_done,
     set_pinned,
     split_query,
+    split_status,
     tag_counts,
     tags_of,
     update_todo,
+    without_tags,
 )
 from fini.widgets.todos_table import ListColors, summary_text
 
@@ -54,6 +56,10 @@ class TodosTest(unittest.TestCase):
         self.assertEqual(ids(list_todos(self.db, "#home #travel", "all")), [newest.id])
         self.assertEqual(ids(list_todos(self.db, "100%", "all")), [newest.id])
         self.assertEqual(ids(list_todos(self.db, "1_0", "all")), [])
+        # A word does not match a tag: "travel" is only a tag here, "home" only a tag, "trip" text
+        self.assertEqual(ids(list_todos(self.db, "travel", "all")), [])
+        self.assertEqual(ids(list_todos(self.db, "trip", "all")), [newest.id])
+        self.assertEqual(ids(list_todos(self.db, "HOM", "all")), [])
         self.assertEqual(tag_counts(self.db), [("home", 3), ("travel", 1), ("work", 1)])
 
     def test_saving_rewrites_the_tags_done_keeps_its_first_time_and_delete_removes(self) -> None:
@@ -102,3 +108,25 @@ class SummaryTextTest(unittest.TestCase):
         self.assertEqual((str(styles["#home"].color.name), styles["#home"].meta["tag"]), ("#00ffff", "home"))
         self.assertIn("#ff00ff", str(styles["#money"]))
         self.assertEqual(summary_text("No tags", colors).plain, "No tags")
+
+
+class SearchWordsTest(unittest.TestCase):
+    def test_a_word_matches_the_text_but_not_the_tags(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db = open_database(Path(tmp) / "fini.sqlite3")
+            tagged = create_todo(db, "Fix the docs #api")
+            text = create_todo(db, "Document the API")
+            rapid = create_todo(db, "Rapid fix")
+            code = create_todo(db, "Escape `#api` in markdown")
+            ids = lambda todos: sorted(todo.id for todo in todos)  # noqa: E731
+            self.assertEqual(ids(list_todos(db, "api")), ids([text, rapid, code]))
+            self.assertEqual(ids(list_todos(db, "#api")), [tagged.id])
+            self.assertEqual(ids(list_todos(db, "fix #api")), [tagged.id])
+            self.assertEqual(without_tags("a #b c"), "a   c")
+            db.close()
+
+    def test_is_open_and_is_done_in_a_search(self) -> None:
+        self.assertEqual(split_status("is:open fix #api"), ("open", "fix #api"))
+        self.assertEqual(split_status("fix IS:Closed"), ("done", "fix"))
+        self.assertEqual(split_status("is:done is:open x"), ("open", "x"))
+        self.assertEqual(split_status("this:open"), ("all", "this:open"))

@@ -28,7 +28,7 @@ or context it does not give comes from the rules in `~/.config/fini/config.yml`
 
 `tab` switches between the Todos and Logs tabs. On Todos, `n` writes a new todo, Enter shows one
 (Escape goes back), and `e` edits it in `$EDITOR` (empty it to delete it), `x` marks it done, `p` or space pins it, `f` shows
-open, done or all todos, `/` searches, and `#tag` in a todo's text makes a tag to filter on. The Logs tab shows the last 7 days of logs, the last day first;
+open, done or all todos (`is:open` or `is:done` in the search), `/` searches, and `#tag` in a todo's text makes a tag to filter on. The Logs tab shows the last 7 days of logs, the last day first;
 `j` and `k` scroll; select text with the mouse and press `y` to copy it. `?` lists every shortcut, `t` changes the theme
 and `q` quits.
 
