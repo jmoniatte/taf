@@ -1,5 +1,20 @@
-.bundle
-vendor/bundle
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.venv/
+build/
+dist/
 
-CLAUDE.md
+# Claude Code
 .claude/
+
+# Vim
+*.swp
+*.swo
+*~
+.*.swp
+.*.swo
+Session.vim
+.netrwhist

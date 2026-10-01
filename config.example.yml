@@ -1,0 +1,27 @@
+# ~/.config/fini/config.yml (optional)
+
+# Color theme: terminal (read from the terminal itself) or any base16 scheme
+# in tui-kit (tui_kit/styles/themes/), by its upstream slug. Press t in the app to
+# browse them; the choice is written back here.
+theme: terminal
+
+database_path: '~/.config/fini/fini.sqlite3'
+
+action:
+  default: 'code'
+  rules:
+    meet:
+      - '^Met\b'
+    email:
+      - '\bEmailed\b'
+    admin:
+      - null
+context:
+  default: 'frontend'
+  rules:
+    backend:
+      - '\brails\b'
+      - '\bdjango\b'
+    mobile:
+      - '\bandroid\b'
+      - '\bios\b'

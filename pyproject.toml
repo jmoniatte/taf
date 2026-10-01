@@ -1,0 +1,38 @@
+[project]
+name = "fini"
+dynamic = ["version"]
+description = "TUI for todos and a log of the work done"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "textual>=7.2.0",
+    "rich>=14.2.0",
+    "pyyaml>=6.0",
+    "tui-kit",
+]
+
+[tool.uv.sources]
+# Not published: installed from GitHub's master; `uv lock --upgrade-package tui-kit` picks up new commits.
+# To work on tui-kit and this app together, use the folder next to this one instead:
+# tui-kit = { path = "../tui-kit", editable = true }
+tui-kit = { git = "ssh://git@github.com/jmoniatte/tui-kit.git", branch = "master" }
+
+[project.scripts]
+fini = "fini.__main__:main"
+
+[dependency-groups]
+# 0.16 turns on a much larger default rule set; adopt it deliberately, not by drift
+dev = ["ruff>=0.15.7,<0.16"]
+
+[build-system]
+requires = ["setuptools>=61.0", "setuptools-scm>=8"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["fini*"]
+
+[tool.setuptools.package-data]
+fini = ["styles/*.tcss"]
+
+[tool.setuptools_scm]
