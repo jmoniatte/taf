@@ -19,6 +19,7 @@ fini log Reviewed PR from Zach @20m     # log a message
 fini log                                # today's logs
 fini log -v 2                           # the last 2 days' logs
 fini log -e 2                           # edit the last 2 days' logs in $EDITOR
+fini todo "Refactor the subscriptions #rails"   # write a todo
 ```
 
 A message takes `@30m`, `@1h` or `@1h45` for the time spent, `@context` and `+action`; an action

@@ -4,7 +4,7 @@ from collections.abc import Sequence
 
 from tui_kit.start import start
 
-from . import __version__, log_command
+from . import __version__, log_command, todo_command
 from .app import FiniApp
 from .config import load_config
 
@@ -46,16 +46,33 @@ def log_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def todo_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="fini todo",
+        description="Write a todo without the TUI. #tags at the end go on their own line, after a blank one.",
+        epilog='example:\n  fini todo "Refactor the subscription model #rails"\n\nQuote it: the shell reads an unquoted #tag as a comment.',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument("message", nargs="+", help="the todo")
+    return parser
+
+
 def main(argv: Sequence[str] | None = None) -> None:
     argv = list(sys.argv[1:] if argv is None else argv)
     if argv[:1] == ["log"]:
         # Its own parser: options may come after the message's words, which subcommands do not allow
         args = log_parser().parse_intermixed_args(argv[1:])
         raise SystemExit(log_command.run(load_config(), " ".join(args.message), view=args.view, edit=args.edit))
+    if argv[:1] == ["todo"]:
+        args = todo_parser().parse_args(argv[1:])
+        raise SystemExit(todo_command.run(load_config(), " ".join(args.message)))
 
     parser = argparse.ArgumentParser(
         description="Todos and a log of the work done, in the terminal.",
-        epilog="fini log: log a message, or show or edit the logs, without the TUI (fini log --help)",
+        epilog=(
+            "fini log: log a message, or show or edit the logs, without the TUI (fini log --help); "
+            "fini todo: write a todo (fini todo --help)"
+        ),
     )
     parser.add_argument("--version", action="version", version=f"fini {__version__}")
     parser.parse_args(argv)

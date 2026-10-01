@@ -27,10 +27,11 @@ fini log Reviewed PR from Zach @20m     # log a message
 fini log                                # today's logs
 fini log -v 2                           # the last 2 days' logs
 fini log -e 2                           # edit the last 2 days' logs in $EDITOR
+fini todo "Refactor the subscriptions #rails"   # write a todo
 ```
 
 `fini` refuses to start unless stdin and stdout are a terminal (tui-kit's `start`); `fini log`
-does not go through that check.
+and `fini todo` do not go through that check.
 
 ## Test
 
@@ -55,6 +56,7 @@ fini/                   # git root + pyproject.toml (run uv commands here)
   fini/                 # Python package
     __init__.py         # The version and the repository's URL
     __main__.py         # The command line: the TUI, or `fini log`'s own parser
+    todo_command.py     # `fini todo`: write a todo in the shell, tags at the end on their own line; no Textual
     log_command.py      # `fini log`: log, view and edit in the shell, as the Ruby fini did; no Textual
     message.py          # A message's @duration, @context and +action, and the rules that infer the rest; no Textual
     app.py              # FiniApp, a tui-kit BaseApp: TABS, the footer and its messages, the keys
@@ -206,6 +208,13 @@ deleted and replaced by the `* HH:MM - message` lines under it, parsed again wit
 rules, in one transaction (`logs.replace_days`). Other lines are ignored, and a day whose header
 was removed keeps its logs. Times lose their seconds, as in the Ruby fini. A date or time that
 does not exist saves nothing and keeps the file, whose path the error gives.
+
+`fini todo <message>` writes a todo (`todo_command.run`, its own parser, `__main__.todo_parser`).
+The `#tags` at the end of the message go on their own line after a blank one
+(`todo_command.todo_content`): `fini todo "Refactor the subscriptions #rails"` stores
+`Refactor the subscriptions\n\n#rails`, so the list shows the text with `#rails` in cyan after it.
+A tag inside the message stays where it is, and a message of tags only is kept as is. The message
+must be quoted when it has a tag: the shell reads an unquoted `#rails` as a comment.
 
 ## Config
 
