@@ -15,7 +15,15 @@ cd fini
 ```bash
 fini
 fini --version
+fini log Reviewed PR from Zach @20m     # log a message
+fini log                                # today's logs
+fini log -v 2                           # the last 2 days' logs
+fini log -e 2                           # edit the last 2 days' logs in $EDITOR
 ```
+
+A message takes `@30m`, `@1h` or `@1h45` for the time spent, `@context` and `+action`; an action
+or context it does not give comes from the rules in `~/.config/fini/config.yml`
+(`config.example.yml` shows them). `fini log --help` lists it all.
 
 `tab` switches between the Todos and Logs tabs. The Logs tab shows the last 7 days of logs, the last day first;
 `j` and `k` scroll; select text with the mouse and press `y` to copy it. `?` lists every shortcut, `t` changes the theme

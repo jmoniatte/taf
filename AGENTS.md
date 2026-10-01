@@ -22,9 +22,14 @@ tabs are the first row, and every message goes to the footer.
 
 ```bash
 fini
+fini log Reviewed PR from Zach @20m     # log a message
+fini log                                # today's logs
+fini log -v 2                           # the last 2 days' logs
+fini log -e 2                           # edit the last 2 days' logs in $EDITOR
 ```
 
-It refuses to start unless stdin and stdout are a terminal (tui-kit's `start`).
+`fini` refuses to start unless stdin and stdout are a terminal (tui-kit's `start`); `fini log`
+does not go through that check.
 
 ## Test
 
@@ -48,11 +53,13 @@ the commented-out `../tui-kit` path.
 fini/                   # git root + pyproject.toml (run uv commands here)
   fini/                 # Python package
     __init__.py         # The version and the repository's URL
-    __main__.py         # The command line
+    __main__.py         # The command line: the TUI, or `fini log`'s own parser
+    log_command.py      # `fini log`: log, view and edit in the shell, as the Ruby fini did; no Textual
+    message.py          # A message's @duration, @context and +action, and the rules that infer the rest; no Textual
     app.py              # FiniApp, a tui-kit BaseApp: TABS, the footer and its messages, the keys
     config.py           # Optional ~/.config/fini/config.yml (theme, through tui_kit.config; database_path)
     database.py         # Opening the SQLite database and its migrations; no Textual
-    logs.py             # Log, reading the logs, formatting a duration; no Textual
+    logs.py             # Log, reading, creating and replacing logs, formatting a duration; no Textual
     widgets/            # One view per tab: todos_view.py, logs_view.py
     styles/fini.tcss    # fini's own styles, joined after tui-kit's (app.STYLE_FILES)
 ```
@@ -102,10 +109,45 @@ selects text well. Long lines wrap. Keep the text short: with all 3,000-odd logs
 because the `Static` is laid out again on every refresh and a selection refreshes it on every mouse
 move. Seven days is about 60 lines.
 
+## Command line
+
+`fini log` is the Ruby fini's command line, with `log` in front: `fini log <message>` logs it,
+`fini log` shows today, `fini log -v N` the last N days (today included), `fini log -e [N]` edits
+the last N days (1 by default). It has its own parser (`__main__.log_parser`, through
+`parse_intermixed_args`, so `-v 2` may come after a message's words); argparse's subcommands do
+not allow that. Like the Ruby fini, every command clears the screen first and colors its output
+with the terminal's own ANSI colors (red day, cyan durations, bold text, grey italic
+`[+action @context]`), but only when stdout is a terminal. The output is the same text the Logs
+tab shows. Logging a message shows the day it was logged on.
+
+A message (`message.parse_message`, a port of `message_parser.rb` and its spec in
+`tests/test_message.py`) loses its first `@duration` (`@30m`, `@2h`, `@1.5h`, `@1h30`), then its
+first `@context`, then its first `+action`; spaces left doubled are squeezed. An action or context
+it does not give comes from the config's rules, tried in the file's order against the whole
+message (`re.search`), else that setting's `default`. Run over the 3,098 logs of the real database,
+the port gives the same text and duration for every one; the action or context differs for 84,
+logged before the rules were last changed (`email` became `comm`).
+
+`-e` writes the days as markdown to a temporary file (`log_command.render_markdown`), each log as
+it was typed:
+
+```
+# 2026-09-30 - Wednesday
+* 09:00 - Reviewed PR @15m
+```
+
+then runs `$EDITOR` (`vim` if unset) on it and, whatever the editor's exit status, reads it back
+(`parse_markdown`): every day whose `# YYYY-MM-DD` header is still in the file has all its logs
+deleted and replaced by the `* HH:MM - message` lines under it, parsed again with the current
+rules, in one transaction (`logs.replace_days`). Other lines are ignored, and a day whose header
+was removed keeps its logs. Times lose their seconds, as in the Ruby fini. A date or time that
+does not exist saves nothing and keeps the file, whose path the error gives.
+
 ## Config
 
-`~/.config/fini/config.yml` is optional. It is the file the Ruby fini read, so it also holds the
-`action` and `context` rules, which the Python version does not read yet. `database_path` is the
+`~/.config/fini/config.yml` is optional. It is the file the Ruby fini read. `action` and `context`
+each hold a `default` and `rules`, a name per list of regular expressions (`config._read_inference`;
+a `null` or invalid pattern is skipped, the latter with a warning). `database_path` is the
 SQLite file (`~` expanded), `~/.config/fini/fini.sqlite3` by default.
 `theme` is `terminal` (the default) or the slug of a scheme in tui-kit; the picker writes it back
 with `tui_kit.config.save_setting`, which changes only that line.

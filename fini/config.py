@@ -1,3 +1,4 @@
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -5,6 +6,8 @@ from pathlib import Path
 import yaml
 from tui_kit.config import read_theme
 from tui_kit.theme import TERMINAL_THEME
+
+from .message import Inference
 
 CONFIG_DIR = Path.home() / ".config" / "fini"
 # .yml, not .yaml: the file the Ruby fini used, with its rules for actions and contexts
@@ -21,6 +24,9 @@ class Config:
     theme: str = TERMINAL_THEME
     # The SQLite file with the logs and the todos; ~ is expanded
     database_path: Path = DEFAULT_DATABASE
+    # How `fini log` names the action and the context a message does not give
+    action: Inference = field(default_factory=Inference)
+    context: Inference = field(default_factory=Inference)
     # Why the config file was ignored; the UI shows these
     warnings: list[str] = field(default_factory=list)
 
@@ -44,7 +50,35 @@ def load_config(path: Path = CONFIG_FILE) -> Config:
     if warning:
         config.warnings.append(warning)
     _read_database_path(data.get("database_path"), config)
+    config.action = _read_inference("action", data.get("action"), config.warnings)
+    config.context = _read_inference("context", data.get("context"), config.warnings)
     return config
+
+
+def _read_inference(key: str, value: object, warnings: list[str]) -> Inference:
+    """`default` and `rules` (name: [patterns]); a pattern that is null or not a regex is skipped."""
+    if value is None:
+        return Inference()
+    if not isinstance(value, Mapping):
+        warnings.append(f"{key}: must be a mapping with default and rules")
+        return Inference()
+    default = value.get("default")
+    inference = Inference(default=str(default) if default is not None else None)
+    rules = value.get("rules") or {}
+    if not isinstance(rules, Mapping):
+        warnings.append(f"{key}.rules: must be a mapping of names to lists of patterns")
+        return inference
+    for name, patterns in rules.items():
+        compiled = []
+        for pattern in patterns if isinstance(patterns, list) else [patterns]:
+            if pattern is None:
+                continue
+            try:
+                compiled.append(re.compile(str(pattern)))
+            except re.error as error:
+                warnings.append(f"{key}.rules.{name}: '{pattern}' is not a valid pattern ({error}), skipping it")
+        inference.rules.append((str(name), compiled))
+    return inference
 
 
 def _read_database_path(value: object, config: Config) -> None:

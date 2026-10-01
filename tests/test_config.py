@@ -34,6 +34,23 @@ class LoadConfigTest(unittest.TestCase):
         self.assertEqual(bad_path.database_path, DEFAULT_DATABASE)
         self.assertIn("database_path: must be a file path", bad_path.warnings[0])
 
+    def test_action_and_context_rules_keep_their_order_and_skip_bad_patterns(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "config.yml"
+            path.write_text(
+                "action:\n  default: code\n  rules:\n    meet:\n      - '^Met\\b'\n    admin:\n      - null\n"
+                "    review:\n      - '['\n      - '^Reviewed'\n"
+                "context:\n  rules: [not, a, mapping]\n"
+            )
+            config = load_config(path)
+        self.assertEqual(config.action.default, "code")
+        self.assertEqual([(name, [p.pattern for p in patterns]) for name, patterns in config.action.rules], [("meet", [r"^Met\b"]), ("admin", []), ("review", ["^Reviewed"])])
+        self.assertEqual(config.action.infer("Reviewed a PR"), "review")
+        self.assertEqual((config.context.default, config.context.rules), (None, []))
+        self.assertEqual(len(config.warnings), 2)
+        self.assertIn("action.rules.review: '[' is not a valid pattern", config.warnings[0])
+        self.assertIn("context.rules: must be a mapping", config.warnings[1])
+
 
 if __name__ == "__main__":
     unittest.main()
