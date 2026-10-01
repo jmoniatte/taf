@@ -16,14 +16,15 @@ from tui_kit.shortcuts import GENERAL
 from . import REPOSITORY_URL, __version__
 from .config import CONFIG_FILE, Config, load_config
 from .database import open_database
-from .widgets import LogsScroll, LogsView, TodosView
+from .screens import FiniHelpScreen
+from .widgets import LogsView, TodosTab
 
 STYLES_DIR = Path(__file__).parent / "styles"
 # tui-kit's stylesheets first, so the app's own rules win where they differ
 STYLE_FILES = (*tui_kit.STYLE_FILES, STYLES_DIR / "fini.tcss")
 # Each tab by name, with its label and view; the first one opens first
 TABS = {
-    "todos": ("Todos", TodosView),
+    "todos": ("Todos", TodosTab),
     "logs": ("Logs", LogsView),
 }
 
@@ -47,8 +48,8 @@ class FooterMessage(HeaderNotification):
         self.screen.query_one("#btn-help").display = shown and not self.display
 
 
-def footer_button(label: str, id: str) -> Button:
-    button = Button(label, id=id)
+def footer_button(label: str, id: str, classes: str = "") -> Button:
+    button = Button(label, id=id, classes=classes)
     # A click must not take focus off the view, which keeps it for its keys
     button.can_focus = False
     return button
@@ -64,7 +65,6 @@ class FiniApp(BaseApp):
     TITLE = "Fini"
     VERSION = __version__
     REPOSITORY_URL = REPOSITORY_URL
-    HELP_BINDINGS = (LogsScroll.BINDINGS,)
     # Nothing takes focus on its own: TabbedContent shows the tab of whatever has focus, so the logs
     # list would open on Logs; a tab's list gets focus when its tab shows
     AUTO_FOCUS = None
@@ -98,9 +98,16 @@ class FiniApp(BaseApp):
             for name, (label, view) in TABS.items():
                 with TabPane(label, id=f"{name}-tab"):
                     yield view(id=f"{name}-view")
-        # Under every tab: a rule, Close on the left and Help on the right; a message takes Help's place while it shows
+        # Over the right end of the tabs' row, which leaves it room for the tabs
+        yield footer_button("Exit", "btn-exit", classes="tinted -red")
+        # Under every tab: a rule, then Help on the right; a message takes Help's place while it shows.
+        # While a todo is on show, Close, back to the list, and Edit on the left
         with Horizontal(id="app-footer"):
-            yield footer_button("Close", "btn-close")
+            yield footer_button("Close", "btn-close-todo")
+            yield footer_button("Edit", "btn-edit", classes="tinted")
+            yield footer_button("Delete", "btn-delete", classes="tinted -red")
+            # Only on the todos list, like the Refresh under yafyaf-tui's list
+            yield footer_button("Refresh", "btn-refresh", classes="tinted -green")
             yield footer_button("Help", "btn-help")
             yield FooterMessage()
 
@@ -109,10 +116,43 @@ class FiniApp(BaseApp):
         event.stop()
         self.action_help()
 
-    @on(Button.Pressed, "#btn-close")
-    def _close(self, event: Button.Pressed) -> None:
+    def action_help(self) -> None:
+        """The app's keys on the left, the keys of the tab on show on the right."""
+        view = self.query_one("#tabs", TabbedContent).active_pane.children[0]
+        self.push_screen(FiniHelpScreen(*view.help_section()))
+
+    @on(Button.Pressed, "#btn-exit")
+    def _exit(self, event: Button.Pressed) -> None:
         event.stop()
         self.exit()
+
+    @on(Button.Pressed, "#btn-close-todo")
+    def _close_todo(self, event: Button.Pressed) -> None:
+        event.stop()
+        self.query_one(TodosTab).show_list()
+
+    @on(Button.Pressed, "#btn-edit")
+    def _edit_todo(self, event: Button.Pressed) -> None:
+        event.stop()
+        self.query_one(TodosTab).edit_viewed()
+
+    @on(Button.Pressed, "#btn-delete")
+    def _delete_todo(self, event: Button.Pressed) -> None:
+        event.stop()
+        self.query_one(TodosTab).delete_viewed()
+
+    @on(Button.Pressed, "#btn-refresh")
+    def _refresh_todos(self, event: Button.Pressed) -> None:
+        event.stop()
+        self.query_one(TodosTab).list.load()
+
+    def refresh_footer(self) -> None:
+        """Close, Edit and Delete show while a todo is on show, Refresh while the todos list is."""
+        view = self.query_one("#tabs", TabbedContent).active_pane.children[0]
+        viewing = getattr(view, "viewing", None) is not None
+        for button in ("#btn-close-todo", "#btn-edit", "#btn-delete"):
+            self.query_one(button).display = viewing
+        self.query_one("#btn-refresh").display = isinstance(view, TodosTab) and not viewing
 
     def on_mount(self) -> None:
         # The view keeps focus for its keys; tabs switch by click or with tab
@@ -121,6 +161,7 @@ class FiniApp(BaseApp):
             self.notify(warning, severity="warning", timeout=10)
         if self.database_error:
             self.notify(self.database_error, severity="error", timeout=10)
+        self._show_tab(self.query_one("#tabs", TabbedContent).active_pane)
 
     def on_unmount(self) -> None:
         super().on_unmount()
@@ -129,7 +170,8 @@ class FiniApp(BaseApp):
 
     def apply_theme(self, theme_name: str) -> None:
         super().apply_theme(theme_name)
-        # refresh_css only re-applies TCSS; the logs bake their colors into Rich text
+        # refresh_css only re-applies TCSS; the lists bake their colors into Rich text
+        self.query_one(TodosTab).set_colors()
         self.query_one(LogsView).set_colors()
 
     @property
@@ -144,5 +186,9 @@ class FiniApp(BaseApp):
     @on(TabbedContent.TabActivated, "#tabs")
     def _tab_activated(self, event: TabbedContent.TabActivated) -> None:
         self.tab = event.pane.id.removesuffix("-tab")
-        # The tab's list takes focus for its keys; a tab with none leaves nothing focused
-        self.screen.set_focus(next((widget for widget in event.pane.query("*") if widget.focusable), None))
+        self._show_tab(event.pane)
+
+    def _show_tab(self, pane: TabPane) -> None:
+        # The tab's view gives focus to its list, for its keys
+        pane.children[0].tab_shown()
+        self.refresh_footer()

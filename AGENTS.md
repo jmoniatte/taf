@@ -13,9 +13,10 @@ tabs are the first row, and every message goes to the footer.
 ## Rules
 
 - Do not git commit unless asked
-- The help screen lists every binding that has a description and a `group`
-  (`tui_kit.shortcuts.ACTIONS` or `GENERAL`) in `FiniApp.BINDINGS` and `FiniApp.HELP_BINDINGS`;
-  document a new key there
+- Help (`FiniHelpScreen`, as in outils) lists the bindings that have a description and a `group`
+  (`tui_kit.shortcuts.ACTIONS` or `GENERAL`): `FiniApp.BINDINGS` on the left, under General, and
+  on the right those the tab on show names in its `help_section()` (the Todos list's, a todo's
+  while one is on show, or the Logs'); document a new key there
 - Never hardcode a color in a `.tcss` file
 
 ## Run
@@ -59,8 +60,13 @@ fini/                   # git root + pyproject.toml (run uv commands here)
     app.py              # FiniApp, a tui-kit BaseApp: TABS, the footer and its messages, the keys
     config.py           # Optional ~/.config/fini/config.yml (theme, through tui_kit.config; database_path)
     database.py         # Opening the SQLite database and its migrations; no Textual
+    editor.py           # edit_text: some text in $EDITOR through a temporary file; no Textual
+    todos.py            # Todo, listing and searching todos, saving, done and pinned, #tags; no Textual
     logs.py             # Log, reading, creating and replacing logs, formatting a duration; no Textual
-    widgets/            # One view per tab: todos_view.py, logs_view.py
+    screens/            # FiniHelpScreen: Help with the app's keys and the tab's own, as in outils
+    widgets/            # One view per tab: todos_tab.py (the list, todos_view.py, whose rows are
+                        # todos_table.py, or one todo, todo_detail.py, in todo_markdown.py) and logs_view.py;
+                        # dashed_rule.py, the rule under the todos' header, copied from yafyaf-tui
     styles/fini.tcss    # fini's own styles, joined after tui-kit's (app.STYLE_FILES)
 ```
 
@@ -71,16 +77,74 @@ then Logs. Each pane is `<name>-tab` and holds its view, `<name>-view`. A click
 on a tab or `tab` switches; `tab` is an app binding with `priority`, so the screen's own `tab`
 (focus next) never runs, and it is skipped while a panel or dialog is up. The tabs cannot take
 focus, so a view keeps its keys. `FiniApp.tab` is the name of the tab on show. When a tab shows,
-its first widget that can take focus gets it (the logs list), or nothing has focus. `AUTO_FOCUS`
+its view's `tab_shown` gives focus to its list. `AUTO_FOCUS`
 is None: `TabbedContent` switches to the tab of whatever has focus, so Textual focusing the logs
 list on start would open on Logs.
 
-Under every tab, `#app-footer` is docked at the bottom: a rule (`border-top`) over Close, which
-quits, on the left, and Help, which opens the shortcuts like `?`, on the right (`dock: right`).
-Neither can take focus, so a click leaves the view's keys working. tui-kit shows messages in
+A red Exit button (tui-kit's `tinted -red`), which quits, sits at the right end of the tabs' row: it is on the
+screen's `overlay` layer, docked right, so it covers the end of that row rather than taking room
+from it.
+
+Under every tab, `#app-footer` is docked at the bottom: a rule (`border-top`) over Help, which
+opens the shortcuts like `?`, on the right (`dock: right`). Neither Help nor Exit can take focus, so a click leaves the view's keys working. tui-kit shows messages in
 whatever `HeaderNotification` the screen holds, so the footer holds one, `FooterMessage`: while a
 message shows, it takes Help's place, right-aligned (an error wraps onto up to three lines), and
 Help comes back once it clears. Copied from outils.
+
+## Todos
+
+The Todos tab is YafYaf's yaf list (yafyaf-tui's `YafsView`) on the local database, and the todos
+YafYaf had for a while (kept in a stash in yafyaf-tui and yafyaf, "Todos tab" and "Todos API").
+`TodosView` is a search box, the Tags dropdown, the status dropdown (Open, Done, All; Open by
+default) and New Todo, over a header with the count ("2 open todos", "1 todo matching 'x'"), a
+dashed rule and `TodosTable`. A row is a check box and a star (Nerd Font `󰄱`/`󰄲`, `☆`/`★`), then
+the summary: the first line with text, links by their label in blue, inline
+code without its backticks in orange (as in the view), a markdown heading without its `#`s in yellow, tags in purple, then the todo's tags that are not
+in that first line (`Todo.tags`, from the whole content) in cyan, clickable like the others;
+all gray once done. The last updated first,
+`updated_at` only (`todos.list_todos`): pinned and done todos are not sorted apart.
+
+A todo is `content`, `tags`, `pinned`, `done_at` (done is `done_at` being set; marking a done
+todo done again keeps the first time), `created_at` and `updated_at`. `tags` is a JSON array,
+`["home", "work"]`, of the `#tags` in the content (YafYaf's rule, `todos.TAG`: a letter after the
+`#`, not glued to what precedes it, never in inline code), rewritten on every save, so the Tags
+dropdown's counts and a `#tag` in the search are SQL over `json_each`. A search keeps the todos
+whose content has every plain word (`LIKE`, case ignored for ASCII) and every `#tag`.
+
+Keys, on the list: `n` (or New Todo) writes a new todo, Enter (or a click on a row) shows the
+highlighted one, `e` or Shift+Enter edits it. `x` marks done or not, `p` or space pins or not, `f`
+cycles Open, Done, All, `/` goes to the search (Enter runs it, Escape goes back), `#` opens Tags,
+`r` reloads, `y` copies the todo. A click on the box marks done, on the star pins, by which half
+of the first column it hit, since Alacritty draws the Nerd Font box wider than its cell; a click
+on a tag adds it to the search, on a link opens it. Marking done and pinning change the box or the
+star in the row and move nothing, which would be confusing: the status filter applies on the next
+load (a todo marked done stays on the Open list, gray, until then). Neither changes `updated_at`, which
+says when the content last changed.
+
+`TodosTab` (`widgets/todos_tab.py`) is what the tab holds: the list (`TodosView`) or, in its
+place, one todo (`TodoDetail`), as yafyaf-tui's `MainArea` switches between its list and
+`YafDetail`; `TodosTab.viewing` is the todo on show, or None. The view shows a line first: the check
+box and the star as in the list, which a click toggles (in the list's row too), then, in green,
+"Updated Monday, July 1, 2026" (`todos.long_date`, yafyaf-tui's format), when the content last
+changed; then its content as markdown (`TodoMarkdown`, a
+copy of yafyaf-tui's `YafMarkdown`: links the terminal can open, tags that filter the list, code
+blocks; its styles map Textual's markdown onto the palette). Escape or `q` goes back to the list,
+`e` or Shift+Enter edits, `y` copies the selection or the todo, `j` and `k` scroll. While a todo
+is on show the footer has Close, back to the list like Escape, then a blue Edit and a red Delete
+(which asks first, Cancel focused), on the left
+(`FiniApp.refresh_footer`, also run when the tab changes, so they hide on Logs). While the list
+is on show, the footer has a green Refresh there instead, which reloads it like `r`, for todos
+written by `fini todo` meanwhile.
+
+Editing (`TodosTab.edit`) opens the todo in `$EDITOR` (`editor.edit_text`, inside
+`App.suspend`) as markdown under YAML front matter with `created_at`, `updated_at`, `done_at` (the
+time, or nothing) and `pinned` (`true` or `false`), colons lined up (`todos.front_matter`,
+`editor.field_lines`), like a yaf in yafyaf-tui's editor; a new todo opens empty. The front matter
+is for the eye only: it is dropped on save (`editor.without_front_matter`), changed or not.
+Emptied, a todo is deleted once confirmed, and a new one left empty is a cancel; an editor that
+exits with an error (`:cq`) saves nothing. Saving goes back where the edit started: the todo,
+showing what was saved, or the list, reloaded with the cursor on the todo. A todo deleted from its
+view goes back to the list.
 
 ## Logs
 
@@ -160,7 +224,7 @@ the migrations it lacks. `database.MIGRATIONS` is a list of SQL scripts, in orde
 user_version` is how many of them a database has run, and each runs with its new number in one
 transaction. Add a migration at the end; never edit one that may have run.
 
-Migration 1 is the `logs` table and its three indexes exactly as the Ruby fini's Sequel
+Migration 2 adds the `todos` table (see Todos). Migration 1 is the `logs` table and its three indexes exactly as the Ruby fini's Sequel
 migrations made them, read off a real database. A Ruby fini database is at `user_version` 0 with
 a `logs` table already: it is marked as being at `RUBY_VERSION` and migration 1 never runs on it.
 Its `schema_migrations` table (Sequel's) is left alone. Before the first change to a database

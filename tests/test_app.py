@@ -6,14 +6,14 @@ from datetime import date, timedelta
 from pathlib import Path
 
 from textual.widgets import Static, TabbedContent
-from tui_kit import shortcuts
 from tui_kit.help_screen import HelpScreen
 from tui_kit.theme import list_themes, load_palette
 
 from fini.app import TABS, FiniApp, FooterMessage, load_stylesheet
 from fini.config import Config
 from fini.database import open_database
-from fini.widgets import LogsScroll
+from fini.todos import create_todo
+from fini.widgets import LogsScroll, TodosTable
 
 # The Logs tab shows the last 7 days, so the logs are dated from today
 TODAY = date.today()
@@ -66,7 +66,7 @@ class AppTest(unittest.TestCase):
             await pilot.press("tab")
             await pilot.pause()
             self.assertEqual(app.tab, "todos")
-            self.assertIsNone(app.focused)
+            self.assertIsInstance(app.focused, TodosTable)
 
         self.run_app(body)
 
@@ -138,26 +138,64 @@ class AppTest(unittest.TestCase):
 
             asyncio.run(main())
 
-    def test_help_lists_every_key_and_tab_does_nothing_under_it(self) -> None:
-        async def body(app, pilot) -> None:
-            await pilot.press("?")
+    def test_help_shows_the_apps_keys_and_the_tabs_own(self) -> None:
+        async def help_keys(app, pilot) -> dict[str, list[str]]:
+            """Help's keys by column title, then Help closed again."""
+            await pilot.press("question_mark")
             await pilot.pause()
             self.assertIsInstance(app.screen, HelpScreen)
-            keys = {static.content for static in app.screen.query(".shortcut-key")}
-            expected = {
-                shortcut.key
-                for section in shortcuts.SECTIONS
-                for shortcut in shortcuts.for_section(section, LogsScroll.BINDINGS, app.BINDINGS)
+            # The app's own Close must not hide Help's
+            self.assertTrue(app.screen.query_one("#btn-close").display)
+            columns = {
+                str(column.query_one(".section-title").render()): [str(key.render()) for key in column.query(".shortcut-key")]
+                for column in app.screen.query(".shortcuts-section")
             }
-            self.assertEqual(keys, expected)
-            self.assertTrue({"?", "t", "y", "tab", "q", "j", "k"} <= keys)
+            # tab does nothing under Help
             await pilot.press("tab")
             await pilot.pause()
+            await pilot.press("escape")
+            await pilot.pause()
+            return columns
+
+        async def body(app, pilot) -> None:
+            general = ["?", "t", "y", "tab", "q"]
+            self.assertEqual(
+                await help_keys(app, pilot),
+                {"GENERAL": general, "TODOS": ["n", "e", "⇧+enter", "x", "p", "space", "f", "/", "#", "r", "y", "enter", "j", "k"]},
+            )
             self.assertEqual(app.tab, "todos")
+            # One todo on show: its own keys
+            with open_database(app.config.database_path) as database:
+                create_todo(database, "A todo")
+            database.close()
+            await pilot.press("r", "enter")
+            await pilot.pause()
+            self.assertEqual(await help_keys(app, pilot), {"GENERAL": general, "TODO": ["escape", "e", "⇧+enter", "y", "j", "k"]})
+            await pilot.press("tab")
+            await pilot.pause()
+            self.assertEqual(await help_keys(app, pilot), {"GENERAL": general, "LOGS": ["j", "k"]})
+            # The footer's Help button opens the same
+            await pilot.click("#btn-help")
+            await pilot.pause()
+            self.assertIn("LOGS", [str(title.render()) for title in app.screen.query(".section-title")])
 
         self.run_app(body)
 
-    def test_a_message_takes_helps_place_until_it_clears_and_close_quits(self) -> None:
+    def test_exit_sits_at_the_right_end_of_the_tabs_row_and_quits(self) -> None:
+        async def body(app, pilot) -> None:
+            exit_button = app.query_one("#btn-exit")
+            self.assertEqual((exit_button.region.y, exit_button.region.right), (0, app.size.width - 1))
+            self.assertEqual(str(exit_button.label), "Exit")
+            self.assertTrue(exit_button.has_class("tinted", "-red"))
+            # Close and Edit are only for a todo on show
+            self.assertFalse(app.query_one("#btn-close-todo").display or app.query_one("#btn-edit").display)
+            await pilot.click("#btn-exit")
+            await pilot.pause()
+            self.assertFalse(app.is_running)
+
+        self.run_app(body)
+
+    def test_a_message_takes_helps_place_until_it_clears(self) -> None:
         async def body(app, pilot) -> None:
             footer = app.query_one("#app-footer")
             message = app.query_one(FooterMessage)
@@ -177,11 +215,6 @@ class AppTest(unittest.TestCase):
             await pilot.click("#btn-help")
             await pilot.pause()
             self.assertIsInstance(app.screen, HelpScreen)
-            await pilot.press("escape")
-            await pilot.pause()
-            await pilot.click("#btn-close")
-            await pilot.pause()
-            self.assertFalse(app.is_running)
 
         self.run_app(body, Config(theme="onedark", warnings=["Config file is not valid YAML: oops"]))
 

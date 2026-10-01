@@ -21,6 +21,206 @@
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
+   TODOS - YafYaf's list: search, Tags, status and New Todo over the rows
+   ═══════════════════════════════════════════════════════════════════════ */
+
+#todos-controls {
+    height: auto;
+    background: transparent;
+}
+
+#todos-view #search {
+    width: 1fr;
+    background: $bg;
+    color: $fg;
+    border: solid $gutter;
+}
+
+#todos-view #search:focus {
+    border: solid $blue;
+}
+
+/* The dropdowns are boxed like the search field next to them; their overlay opens below */
+#todos-controls Select {
+    height: 3;
+    margin: 0 0 0 2;
+}
+
+#todos-controls #tag-selector {
+    width: 30;
+}
+
+#todos-controls #todo-status {
+    width: 14;
+}
+
+#todos-controls Select SelectCurrent {
+    background: $bg;
+    border: solid $gutter;
+    padding: 0 1;
+    color: $fg;
+}
+
+#todos-controls Select:focus SelectCurrent {
+    border: solid $blue;
+}
+
+#todos-controls Select SelectOverlay {
+    background: $bg-dark;
+    border: none;
+    max-height: 12;
+    scrollbar-size: 0 0;
+}
+
+#todos-controls Select SelectOverlay > .option-list--option-highlighted {
+    background: $bg-light;
+    color: $fg;
+    text-style: none;
+}
+
+/* The search box is 3 rows with its border; the top margin lines the button up with its text */
+#todos-controls .tinted {
+    margin: 1 0 0 3;
+}
+
+#todos-header {
+    height: 1;
+    color: $comment;
+}
+
+#todos-header-summary {
+    width: 1fr;
+}
+
+#todos-status {
+    width: auto;
+}
+
+#todos-header-rule {
+    height: 1;
+    color: $comment;
+}
+
+#todos-table {
+    height: 1fr;
+    background: transparent;
+    color: $fg;
+    scrollbar-size-vertical: 1;
+    scrollbar-background: $bg;
+    scrollbar-background-hover: $bg;
+    scrollbar-background-active: $bg;
+    scrollbar-color: $gutter;
+    scrollbar-color-hover: $comment;
+    scrollbar-color-active: $blue;
+    overflow-x: hidden;
+}
+
+#todos-table > .datatable--cursor {
+    background: $bg-light;
+    color: auto;
+    text-style: none;
+}
+
+#todos-table > .datatable--hover {
+    background: transparent;
+}
+
+#todos-list {
+    height: 1fr;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   TODO DETAIL - one todo as markdown in place of the list, under its dates and pin
+   ═══════════════════════════════════════════════════════════════════════ */
+
+#todo-detail {
+    display: none;
+    height: 1fr;
+}
+
+/* The check box and the star, as in the list, then when the todo was last updated, then a blank
+   line before the content */
+#todo-detail-header {
+    height: 1;
+    margin-bottom: 1;
+    color: $comment;
+}
+
+#todo-detail-done {
+    width: 3;
+}
+
+#todo-detail-pin {
+    width: 3;
+}
+
+#todo-detail-pin.-pinned {
+    color: $yellow;
+}
+
+#todo-detail-date {
+    width: 1fr;
+    color: $green;
+}
+
+#todo-detail-scroll {
+    height: 1fr;
+    scrollbar-size-vertical: 1;
+    scrollbar-background: $bg;
+    scrollbar-background-hover: $bg;
+    scrollbar-background-active: $bg;
+    scrollbar-color: $gutter;
+    scrollbar-color-hover: $comment;
+    scrollbar-color-active: $blue;
+}
+
+/* Textual's markdown styles use its own theme variables; map them onto the palette, as yafyaf-tui does */
+#todo-detail-markdown {
+    padding: 0;
+    color: $fg;
+}
+
+/* Link styles do not inherit, so they go on the blocks that hold the text */
+#todo-detail-markdown MarkdownBlock {
+    link-color: $blue;
+    link-background: transparent;
+    link-style: none;
+    link-color-hover: $blue;
+    link-background-hover: transparent;
+    link-style-hover: underline;
+}
+
+#todo-detail-markdown MarkdownHeader {
+    color: $yellow;
+    text-style: bold;
+    margin: 1 0 1 0;
+}
+
+#todo-detail-markdown MarkdownH1 {
+    content-align: left middle;
+    background: transparent;
+    margin: 0 0 1 0;
+}
+
+#todo-detail-markdown MarkdownBlock > .code_inline {
+    background: transparent;
+    color: $orange;
+}
+
+#todo-detail-markdown MarkdownFence {
+    background: $bg-dark;
+}
+
+#todo-detail-markdown MarkdownBlockQuote {
+    background: $bg-dark;
+    border-left: outer $comment;
+}
+
+#todo-detail-markdown MarkdownHorizontalRule {
+    color: $gutter;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
    LOGS
    ═══════════════════════════════════════════════════════════════════════ */
 
@@ -41,18 +241,35 @@
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
-   FOOTER - under every tab: Close on the left, Help or a message on the right
+   HELP - the keys every tab shares on the left, the tab's own on the right, as in outils
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* As wide as their longest line, but some width each, so a tab with few keys of its own does not
+   get a narrow panel: General's own width */
+FiniHelpScreen .shortcuts-section {
+    width: auto;
+    min-width: 24;
+}
+
+FiniHelpScreen #shortcuts-general {
+    margin-right: 4;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   FOOTER - under every tab: Help or a message on the right
    ═══════════════════════════════════════════════════════════════════════ */
 
 #app-footer {
     dock: bottom;
     height: auto;
+    /* The rule and Help's line: Help is docked, so it adds no height of its own */
+    min-height: 2;
     padding: 0 1;
     border-top: solid $gutter;
 }
 
 /* Neutral, like the Close button on tui-kit's panels */
-#btn-close,
+#btn-close-todo,
 #btn-help {
     width: auto;
     min-width: 0;
@@ -64,9 +281,35 @@
     color: $fg;
 }
 
-#btn-close:hover,
+#btn-close-todo:hover,
 #btn-help:hover {
     background: $gutter;
+}
+
+/* At the right end of the tabs' row, over it rather than in it */
+Screen {
+    layers: base overlay;
+}
+
+/* tui-kit's red tinted button */
+#btn-exit {
+    layer: overlay;
+    dock: right;
+    margin: 0 1 0 0;
+}
+
+/* Only while a todo is on show (FiniApp.refresh_footer); Edit is tui-kit's blue tinted button */
+#btn-close-todo,
+#btn-edit,
+#btn-delete,
+#btn-refresh {
+    display: none;
+}
+
+/* Edit and Delete are tui-kit's blue and red tinted buttons */
+#btn-edit,
+#btn-delete {
+    margin: 0 0 0 1;
 }
 
 /* Help on the right; a message in its place while one shows (FooterMessage), right-aligned over

@@ -42,6 +42,13 @@ class LogsView(Vertical):
     def on_mount(self) -> None:
         self.load()
 
+    def help_section(self) -> tuple[str, tuple]:
+        """The title and the keys of Help's right column."""
+        return "Logs", (LogsScroll.BINDINGS,)
+
+    def tab_shown(self) -> None:
+        self.query_one(LogsScroll).focus()
+
     def load(self) -> None:
         """Read the logs of the last DAYS days from the database again."""
         database = self.app.database

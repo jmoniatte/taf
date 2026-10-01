@@ -21,6 +21,18 @@ MIGRATIONS = (
     CREATE INDEX `logs_action_index` ON `logs` (`action`);
     CREATE INDEX `logs_context_index` ON `logs` (`context`);
     """,
+    # 2: todos; tags is a JSON array of the #tags in the content, written on every save
+    """
+    CREATE TABLE todos (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        content TEXT NOT NULL,
+        tags TEXT NOT NULL DEFAULT '[]',
+        pinned INTEGER NOT NULL DEFAULT 0,
+        done_at TIMESTAMP,
+        created_at TIMESTAMP NOT NULL,
+        updated_at TIMESTAMP NOT NULL
+    );
+    """,
 )
 # The last migration a Ruby fini database already has
 RUBY_VERSION = 1
