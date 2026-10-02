@@ -24,7 +24,7 @@ from ..notes import (
     tag_counts,
 )
 from .dashed_rule import DashedRule
-from .notes_table import ListColors, NoteChangeRequested, NotesTable, TagSelected, lead_width
+from .notes_table import ListColors, NoteChangeRequested, NotesTable, TagSelected
 
 
 # The Tags dropdown's first choice, which takes the tags out of the search; not a tag name, which has no space
@@ -92,22 +92,15 @@ class NotesView(Vertical):
             yield Select([("Any tag", ANY_TAG)], value=ANY_TAG, allow_blank=False, id="tag-selector")
             yield from self._compose_status()
             yield Button(f"New {self.KIND.capitalize()}", id="btn-new-note", classes="tinted")
-        # The table's own header cannot hold the count, so it is hidden and drawn here instead
-        with Horizontal(id="notes-header"):
-            yield Static("", id="notes-header-lead")
-            yield Static(self.KIND.capitalize(), id="notes-header-summary")
-            yield Static("", id="notes-status")
-        yield DashedRule(id="notes-header-rule")
+        # The count over a dashed rule; the table has no header
+        yield Static("", id="notes-status")
+        yield DashedRule(id="notes-rule")
         yield NotesTable(self.KIND, self._colors(), id="notes-table")
 
     def _compose_status(self) -> ComposeResult:
         yield from ()
 
     def on_mount(self) -> None:
-        table = self.table
-        # Line the header labels up with the cells, which are padded on both sides
-        self.query_one("#notes-header-lead").styles.width = lead_width(self.KIND) + 2 * table.cell_padding
-        self.query_one("#notes-header-summary").styles.padding = (0, table.cell_padding)
         self.call_after_refresh(self.load)
 
     @property

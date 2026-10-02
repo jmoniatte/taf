@@ -58,8 +58,8 @@ def detail_bindings(kind: str) -> list[Binding]:
 
 
 class NoteDetail(Vertical):
-    """One note rendered as markdown in place of the list, under a line with its star, as in the
-    list, and when it was last updated. TodoDetail adds the check box."""
+    """One note rendered as markdown in place of the list, under a line with its id and star, as in
+    the list, and when it was last updated. TodoDetail adds the check box."""
 
     KIND = NOTE
     BINDINGS = detail_bindings(NOTE)
@@ -71,6 +71,7 @@ class NoteDetail(Vertical):
 
     def compose(self) -> ComposeResult:
         with Horizontal(id="note-detail-header"):
+            yield Static("", id="note-detail-id")
             if self.KIND == TODO:
                 yield DoneBox("", id="note-detail-done")
             yield PinStar("", id="note-detail-pin")
@@ -89,6 +90,7 @@ class NoteDetail(Vertical):
         for box in self.query(DoneBox):
             box.show(note)
         self.query_one(PinStar).show(note)
+        self.query_one("#note-detail-id", Static).update(f"#{note.id}")
         self.query_one("#note-detail-date", Static).update(f"Updated {long_date(note.updated_at)}")
 
     def focus_content(self) -> None:

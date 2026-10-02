@@ -60,7 +60,7 @@ class AppCase(unittest.TestCase):
         return [[str(cell) for cell in table.get_row_at(row)] for row in range(table.row_count)]
 
     def summaries(self, app) -> list[str]:
-        return [row[1] for row in self.rows(app)]
+        return [row[-1] for row in self.rows(app)]
 
     def status(self, app) -> str:
         return str(app.query_one("#todos-view").query_one("#notes-status", Static).render())
@@ -80,7 +80,7 @@ class TodosViewTest(AppCase):
             await pilot.pause()
             # The last updated first; pinned or not
             self.assertEqual(self.summaries(app), ["Plan the trip", "Review the PR #work", "Renew passport #home"])
-            self.assertEqual([row[0] for row in self.rows(app)], ["\U000f0131  ☆", "\U000f0131  ☆", "\U000f0131  ★"])
+            self.assertEqual([row[1] for row in self.rows(app)], ["\U000f0131  ☆", "\U000f0131  ☆", "\U000f0131  ★"])
             self.assertEqual(self.status(app), "3 open todos")
             self.assertTrue(app.query_one("#todos-view").query_one(NotesTable).has_focus)
 
@@ -88,7 +88,7 @@ class TodosViewTest(AppCase):
             await pilot.press("j", "x")
             await pilot.pause()
             self.assertEqual(self.summaries(app), ["Plan the trip", "Review the PR #work", "Renew passport #home"])
-            self.assertEqual(self.rows(app)[1][0], "\U000f0132  ☆")
+            self.assertEqual(self.rows(app)[1][1], "\U000f0132  ☆")
             await pilot.press("r")
             await pilot.pause()
             self.assertEqual(self.summaries(app), ["Plan the trip", "Renew passport #home"])
@@ -103,10 +103,10 @@ class TodosViewTest(AppCase):
             # p pins the highlighted one in its row, and space unpins it; the order never changes
             await pilot.press("k", "k", "p")
             await pilot.pause()
-            self.assertEqual(self.rows(app)[0][0], "\U000f0131  ★")
+            self.assertEqual(self.rows(app)[0][1], "\U000f0131  ★")
             await pilot.press("space", "r")
             await pilot.pause()
-            self.assertEqual(self.rows(app)[0][0], "\U000f0131  ☆")
+            self.assertEqual(self.rows(app)[0][1], "\U000f0131  ☆")
             self.assertEqual(self.summaries(app), ["Plan the trip", "Review the PR #work", "Renew passport #home"])
             self.assertEqual(app.query_one("#todos-view").query_one(NotesTable).cursor_row, 0)
 
@@ -212,11 +212,11 @@ class TodosViewTest(AppCase):
     def test_clicks_on_the_box_the_star_and_a_tag(self) -> None:
         async def body(app, pilot) -> None:
             table = app.query_one("#todos-view").query_one(NotesTable)
-            # The box's half of the first column, then the star's
-            await pilot.click(table, offset=(1, 0))
-            await pilot.pause()
-            self.assertEqual(self.rows(app)[0][0], "\U000f0132  ☆")
+            # Past the id, the box's half of its column, then the star's
             await pilot.click(table, offset=(4, 0))
+            await pilot.pause()
+            self.assertEqual(self.rows(app)[0][1], "\U000f0132  ☆")
+            await pilot.click(table, offset=(7, 0))
             await pilot.pause()
             [todo] = list_notes(self.db, TODO, status="all")
             self.assertEqual((todo.done, todo.pinned), (True, True))
@@ -250,7 +250,7 @@ class TodosViewTest(AppCase):
             todo = list_notes(self.db, TODO, status="open")[0]
             self.assertEqual(
                 seen.read_text(),
-                f"---\ncreated_at : {todo.created_at:%Y-%m-%d %H:%M}\nupdated_at : {todo.updated_at:%Y-%m-%d %H:%M}\n"
+                f"---\nid         : {todo.id}\ncreated_at : {todo.created_at:%Y-%m-%d %H:%M}\nupdated_at : {todo.updated_at:%Y-%m-%d %H:%M}\n"
                 "done_at    :\npinned     : false\n---\n\nBuy milk #home",
             )
             self.assertEqual(self.summaries(app), ["Buy oat milk #home #shop", "Old one"])
@@ -321,7 +321,7 @@ class TodosViewTest(AppCase):
             await pilot.pause()
             self.assertEqual((str(star.render()).strip(), star.has_class("-pinned")), ("★", True))
             self.assertTrue(list_notes(self.db, TODO, status="open")[0].pinned)
-            self.assertEqual(self.rows(app)[0][0], "\U000f0131  ★")
+            self.assertEqual(self.rows(app)[0][1], "\U000f0131  ★")
             self.assertEqual(str(date.render()), f"Updated {long_date(todo.updated_at)}")
             await pilot.click(star)
             await pilot.pause()
@@ -333,7 +333,7 @@ class TodosViewTest(AppCase):
             await pilot.pause()
             self.assertEqual(str(box.render()).strip(), "\U000f0132")
             self.assertTrue(list_notes(self.db, TODO, status="done"))
-            self.assertEqual(self.rows(app)[0][0], "\U000f0132  ☆")
+            self.assertEqual(self.rows(app)[0][1], "\U000f0132  ☆")
             self.assertEqual(str(date.render()), f"Updated {long_date(todo.updated_at)}")
             await pilot.click(box)
             await pilot.pause()
@@ -414,7 +414,7 @@ class TodosViewTest(AppCase):
             await pilot.pause()
             app.apply_theme("dracula")
             await pilot.pause()
-            summary = app.query_one("#todos-view").query_one(NotesTable).get_row_at(0)[1]
+            summary = app.query_one("#todos-view").query_one(NotesTable).get_row_at(0)[-1]
             self.assertIn("#6272a4", str(summary.spans[-1].style).lower())
 
         self.run_app(body, todos=("Done one #home",))
@@ -431,25 +431,25 @@ class NotesViewTest(AppCase):
             rows = lambda: [[str(cell) for cell in table.get_row_at(row)] for row in range(table.row_count)]  # noqa: E731
             # Only the notes: the todo stays on Todos; a star, no box, and no status anywhere
             self.assertTrue(table.has_focus)
-            self.assertEqual(rows(), [["☆", "Wifi is on the fridge #home #wifi"], ["☆", "Car insurance #home #car"]])
+            self.assertEqual(rows(), [["3", "☆", "Wifi is on the fridge #home #wifi"], ["2", "☆", "Car insurance #home #car"]])
             self.assertEqual((search.value, str(tab.query_one("#notes-status", Static).render())), ("", "2 notes"))
             self.assertFalse(tab.query("#todo-status"))
             await pilot.press("x", "f", "p")
             await pilot.pause()
-            self.assertEqual(rows()[0][0], "★")
+            self.assertEqual(rows()[0][1], "★")
             self.assertEqual(search.value, "")
-            await pilot.click(table, offset=(1, 1))
+            await pilot.click(table, offset=(4, 1))
             await pilot.pause()
-            self.assertEqual(rows()[1][0], "★")
+            self.assertEqual(rows()[1][1], "★")
             # Tags add up, from a click or the dropdown; Any takes them all out
-            await pilot.click(table, offset=(27, 0))
+            await pilot.click(table, offset=(30, 0))
             await pilot.pause()
             self.assertEqual(search.value, "#home")
             tags = tab.query_one("#tag-selector", Select)
             self.assertEqual([str(prompt) for prompt, _ in tags._options], ["Any tag", "home (2)", "car (1)", "wifi (1)"])
             tags.value = "wifi"
             await pilot.pause()
-            self.assertEqual((search.value, rows()), ("#home #wifi", [["★", "Wifi is on the fridge #home #wifi"]]))
+            self.assertEqual((search.value, rows()), ("#home #wifi", [["3", "★", "Wifi is on the fridge #home #wifi"]]))
             tags.value = "any tag"
             await pilot.pause()
             self.assertEqual((search.value, len(rows())), ("", 2))
@@ -471,6 +471,7 @@ class NotesViewTest(AppCase):
             self.assertTrue(detail.display)
             self.assertFalse(detail.query("#note-detail-done"))
             self.assertEqual(str(detail.query_one("#note-detail-pin", Static).render()).strip(), "☆")
+            self.assertEqual(str(detail.query_one("#note-detail-id", Static).render()), "#4")
             # Delete, from the footer, as for a todo
             await pilot.click("#btn-delete")
             await pilot.pause()

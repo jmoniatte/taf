@@ -44,5 +44,5 @@ def run(config: Config, message: str, kind: str = NOTE, out: TextIO = sys.stdout
     finally:
         connection.close()
     tags = " ".join(f"#{name}" for name in note.tags)
-    out.write(f"{kind.capitalize()} created: {note.summary}" + (f" ({tags})" if tags and tags not in note.summary else "") + "\n")
+    out.write(f"{kind.capitalize()} {note.id} created: {note.summary}" + (f" ({tags})" if tags and tags not in note.summary else "") + "\n")
     return 0

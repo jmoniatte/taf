@@ -48,8 +48,10 @@ class Note:
 
 
 def front_matter(note: Note) -> dict[str, str]:
-    """What the editor shows over a note's content, in this order; done_at only for a todo."""
+    """What the editor shows over a note's content, in this order; done_at only for a todo. The
+    id is how an agent, or anyone, refers to the note."""
     fields = {
+        "id": str(note.id),
         "created_at": f"{note.created_at:%Y-%m-%d %H:%M}",
         "updated_at": f"{note.updated_at:%Y-%m-%d %H:%M}",
     }

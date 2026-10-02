@@ -97,8 +97,8 @@ class NotesTest(unittest.TestCase):
         self.assertEqual(tag_counts(self.db, TODO), [("home", 1)])
         self.assertIsNone(set_done(self.db, note.id, True).done_at)
         self.assertTrue(set_pinned(self.db, note.id, True).pinned)
-        self.assertEqual(list(front_matter(note)), ["created_at", "updated_at", "pinned"])
-        self.assertEqual(list(front_matter(todo)), ["created_at", "updated_at", "done_at", "pinned"])
+        self.assertEqual(list(front_matter(note)), ["id", "created_at", "updated_at", "pinned"])
+        self.assertEqual(list(front_matter(todo)), ["id", "created_at", "updated_at", "done_at", "pinned"])
 
 
 if __name__ == "__main__":

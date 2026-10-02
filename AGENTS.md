@@ -70,7 +70,7 @@ fini/                   # git root + pyproject.toml (run uv commands here)
     screens/            # FiniHelpScreen: Help with the app's keys and the tab's own, as in outils
     widgets/            # One view per tab: notes_tab.py, NotesTab and TodosTab (the list, notes_view.py, whose rows are
                         # notes_table.py, or one note, note_detail.py, in note_markdown.py), logs_view.py and stats_view.py;
-                        # dashed_rule.py, the rule under the lists' header, copied from yafyaf-tui
+                        # dashed_rule.py, the rule under the lists' count, copied from yafyaf-tui
     styles/fini.tcss    # fini's own styles, joined after tui-kit's (app.STYLE_FILES)
 ```
 
@@ -108,8 +108,8 @@ unless Notes says otherwise.
 The Todos tab is YafYaf's yaf list (yafyaf-tui's `YafsView`) on the local database, and the todos
 YafYaf had for a while (kept in a stash in yafyaf-tui and yafyaf, "Todos tab" and "Todos API").
 `TodosView` is a search box, the Tags dropdown, the status dropdown (Open, Done, All) and New
-Todo, over a header with the count ("2 open todos", "1 todo matching 'x'"), a
-dashed rule and `NotesTable`. A row is a check box and a star (Nerd Font `󰄱`/`󰄲`, `☆`/`★`), then
+Todo, over the count in green ("2 open todos", "1 todo matching 'x'"), a dashed rule
+(`DashedRule`) and `NotesTable`, which has no header. A row is the id in `$fg` (the table's color), a check box and a star (Nerd Font `󰄱`/`󰄲`, `☆`/`★`), then
 the summary: the first line with text, links by their label in blue, inline
 code without its backticks in orange (as in the view), a markdown heading without its `#`s in yellow, tags in purple, then the todo's tags that are not
 in that first line (`Note.tags`, from the whole content) in cyan, clickable like the others;
@@ -133,7 +133,7 @@ Keys, on the list: `n` (or New Todo) writes a new todo, Enter (or a click on a r
 highlighted one, `e` or Shift+Enter edits it. `x` marks done or not, `p` or space pins or not, `f`
 cycles Open, Done, All, `/` goes to the search (Enter runs it, Escape goes back), `#` opens Tags,
 `r` reloads, `y` copies the todo. A click on the box marks done, on the star pins, by which half
-of the first column it hit, since Alacritty draws the Nerd Font box wider than its cell; a click
+of their column it hit, since Alacritty draws the Nerd Font box wider than its cell; a click
 on a tag puts it in the search, on a link opens it. Picking a tag, by a click, in the view or from
 the Tags dropdown, replaces any tag already in the search and keeps its words
 (`TodosView.add_tag`): a todo has one tag at most, so two would find nothing. Like the
@@ -146,8 +146,8 @@ says when the content last changed.
 
 `TodosTab` (`widgets/notes_tab.py`) is what the tab holds: the list (`TodosView`) or, in its
 place, one todo (`TodoDetail`), as yafyaf-tui's `MainArea` switches between its list and
-`YafDetail`; `NotesTab.viewing` is the todo on show, or None. The view shows a line first: the check
-box and the star as in the list, which a click toggles (in the list's row too), then, in green,
+`YafDetail`; `NotesTab.viewing` is the todo on show, or None. The view shows a line first: the id,
+"#12", then the check box and the star as in the list, which a click toggles (in the list's row too), then, in green,
 "Updated Monday, July 1, 2026" (`notes.long_date`, yafyaf-tui's format), when the content last
 changed; then its content as markdown (`NoteMarkdown`, a
 copy of yafyaf-tui's `YafMarkdown`: links the terminal can open, tags that filter the list, code
@@ -160,7 +160,7 @@ is on show, the footer has a green Refresh there instead, which reloads it like 
 written by `fini todo` meanwhile.
 
 Editing (`NotesTab.edit`) opens the todo in `$EDITOR` (`editor.edit_text`, inside
-`App.suspend`) as markdown under YAML front matter with `created_at`, `updated_at`, `done_at` (the
+`App.suspend`) as markdown under YAML front matter with `id`, `created_at`, `updated_at`, `done_at` (the
 time, or nothing) and `pinned` (`true` or `false`), colons lined up (`notes.front_matter`,
 `editor.field_lines`), like a yaf in yafyaf-tui's editor; a new todo opens empty. The front matter
 is for the eye only: it is dropped on save (`editor.without_front_matter`), changed or not.
@@ -169,10 +169,14 @@ exits with an error (`:cq`) saves nothing. Saving goes back where the edit start
 showing what was saved, or the list, reloaded with the cursor on the todo. A todo deleted from its
 view goes back to the list.
 
+The id is the `notes` row's id, shown everywhere so that a todo can be referred to, by an agent
+that implements it for one. Todos and notes share the table, so an id is unique across both, and
+it stays the same if a note's kind changes.
+
 ## Notes
 
 The Notes tab (`NotesTab`) is the Todos tab without the status: no check box in a row or in the
-view (only the star, so the row's first column is 1 wide, `notes_table.lead_width`), no status
+view (only the star, so its column is 1 wide, `notes_table.lead_width`), no status
 dropdown, no `x` or `f`, no `is:` in the search (typed, it is ignored), no `done_at` in the
 editor's front matter. Notes are pinned and deleted like todos. A note may have many tags, so
 picking a tag (`NotesView.add_tag`) adds it to the search rather than replacing the one there, and
@@ -271,7 +275,8 @@ does not exist saves nothing and keeps the file, whose path the error gives.
 `fini todo <message>` writes a todo, and `fini note <message>` a note (`note_command.run`, their
 own parser, `__main__.note_parser`). The `#tags` at the end of the message go on their own line
 after a blank one (`note_command.note_content`): `fini todo "Refactor the subscriptions #rails"` stores
-`Refactor the subscriptions\n\n#rails`, so the list shows the text with `#rails` in cyan after it.
+`Refactor the subscriptions\n\n#rails`, so the list shows the text with `#rails` in cyan after it,
+and prints `Todo 12 created: ...` with the new id.
 A tag inside the message stays where it is, and a message of tags only is kept as is. The message
 must be quoted when it has a tag: the shell reads an unquoted `#rails` as a comment.
 

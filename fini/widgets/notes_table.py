@@ -1,5 +1,5 @@
-"""The table of the Todos and Notes tabs: a todo's check box and the star, then the summary with its
-links and tags."""
+"""The table of the Notes and Todos tabs: the id, a todo's check box and the star, then the summary
+with its links and tags."""
 
 import re
 from dataclasses import dataclass
@@ -112,12 +112,19 @@ class NotesTable(DataTable):
         self.kind = kind
         self._colors = colors
         self.notes: list[Note] = []
-        # Clicks on a todo's first column left of this x hit the box, the others the star
+        # Clicks on a todo's box and star column left of this x, from the column's start, hit the box
         self._star_x = self.cell_padding + 2 if kind == TODO else 0
 
     def on_mount(self) -> None:
+        # As wide as the longest id shown (show), so the rest lines up
+        self.add_column("", key="id", width=1)
         self.add_column("", key="lead", width=lead_width(self.kind))
         self.add_column("Summary", key="summary")
+
+    @property
+    def id_width(self) -> int:
+        """The id column's width, its padding included."""
+        return self.columns["id"].get_render_width(self)
 
     def show(self, notes: list[Note], colors: ListColors | None = None, cursor_on: int | None = None) -> None:
         """Show the notes, with the cursor on the note cursor_on names, else on the note it was on,
@@ -128,9 +135,10 @@ class NotesTable(DataTable):
         row = self.cursor_row
         self.clear()
         self.notes = list(notes)
+        self.columns["id"].width = max((len(str(note.id)) for note in notes), default=1)
         for note in notes:
             # Text, not str: the table reads strings as markup, which eats brackets in a summary
-            self.add_row(self._lead(note), self._summary(note), key=str(note.id))
+            self.add_row(Text(str(note.id), justify="right"), self._lead(note), self._summary(note), key=str(note.id))
         ids = [note.id for note in notes]
         if ids:
             self.move_cursor(row=ids.index(current) if current in ids else min(max(row, 0), len(ids) - 1))
@@ -165,9 +173,9 @@ class NotesTable(DataTable):
             self.move_cursor(row=row)
 
     async def _on_click(self, event: events.Click) -> None:
-        """A click on the box marks done, on the star pins, by which half of the first column it hit:
-        a terminal may draw the Nerd Font box wider than its cell, so the cell clicked is not always
-        the one the icon was written to; a note's first column is all star. A tag filters, a link
+        """A click on the box marks done, on the star pins, by which half of their column it hit: a
+        terminal may draw the Nerd Font box wider than its cell, so the cell clicked is not always
+        the one the icon was written to; a note's column is all star. A tag filters, a link
         opens, anything else opens the note."""
         row = event.style.meta.get("row")
         if not (isinstance(row, int) and 0 <= row < self.row_count):
@@ -176,8 +184,8 @@ class NotesTable(DataTable):
         event.stop()
         note = self.notes[row]
         self.move_cursor(row=row)
-        if event.style.meta.get("column") == 0:
-            if event.x < self._star_x:
+        if event.style.meta.get("column") == 1:
+            if event.x - self.id_width < self._star_x:
                 self.post_message(NoteChangeRequested(note, done=not note.done))
             else:
                 self.post_message(NoteChangeRequested(note, pinned=not note.pinned))
