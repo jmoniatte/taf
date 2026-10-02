@@ -63,6 +63,10 @@ class NotesTab(Vertical):
 
     # -- the list or one note
 
+    def reload(self) -> None:
+        """The footer's Refresh."""
+        self.list.load()
+
     def show_list(self) -> None:
         self.viewing = None
         self.detail.display = False

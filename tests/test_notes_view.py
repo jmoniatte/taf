@@ -193,7 +193,7 @@ class TodosViewTest(AppCase):
             await pilot.pause()
             self.assertEqual(self.summaries(app), ["Written from the shell", "Old one"])
             self.assertTrue(app.query_one("#todos-view").query_one(NotesTable).has_focus)
-            # Not on a todo, nor on Logs; on the notes' list too
+            # Not on a todo, nor on Stats; on the logs and the notes' list too
             await pilot.press("enter")
             await pilot.pause()
             self.assertFalse(refresh.display)
@@ -202,8 +202,11 @@ class TodosViewTest(AppCase):
             self.assertTrue(refresh.display)
             await pilot.press("tab")
             await pilot.pause()
+            self.assertTrue(refresh.display)
+            await pilot.press("tab")
+            await pilot.pause()
             self.assertFalse(refresh.display)
-            await pilot.press("tab", "tab")
+            await pilot.press("tab")
             await pilot.pause()
             self.assertTrue(refresh.display)
 

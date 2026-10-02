@@ -34,6 +34,12 @@ def load_entries(connection: sqlite3.Connection) -> list[Entry]:
     return [Entry(date.fromisoformat(row["day"]), row["action"] or "", row["duration"]) for row in rows]
 
 
+def time_off_days(connection: sqlite3.Connection, entries: list[Entry]) -> set[date]:
+    """The days with time off and no work: a time off log, and no other log with a duration."""
+    rows = connection.execute("SELECT DISTINCT substr(logged_at, 1, 10) AS day FROM logs WHERE action = ?", (TIME_OFF,))
+    return {date.fromisoformat(row["day"]) for row in rows} - {entry.day for entry in entries}
+
+
 def periods(entries: list[Entry], today: date) -> list[Period]:
     """The last 12 months, then each year with logs, the last first, then all of them; none starts
     before the first log."""

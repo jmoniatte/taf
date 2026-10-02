@@ -108,7 +108,7 @@ class FiniApp(BaseApp):
             yield footer_button("Close", "btn-close-note")
             yield footer_button("Edit", "btn-edit", classes="tinted")
             yield footer_button("Delete", "btn-delete", classes="tinted -red")
-            # Only on a list of notes or todos, like the Refresh under yafyaf-tui's list
+            # Only on a list of notes or todos and on the logs, like the Refresh under yafyaf-tui's list
             yield footer_button("Refresh", "btn-refresh", classes="tinted -green")
             yield footer_button("Help", "btn-help")
             yield FooterMessage()
@@ -148,17 +148,18 @@ class FiniApp(BaseApp):
         self.active_view.delete_viewed()
 
     @on(Button.Pressed, "#btn-refresh")
-    def _refresh_notes(self, event: Button.Pressed) -> None:
+    def _refresh(self, event: Button.Pressed) -> None:
         event.stop()
-        self.active_view.list.load()
+        self.active_view.reload()
 
     def refresh_footer(self) -> None:
-        """Close, Edit and Delete show while a note or a todo is on show, Refresh while their list is."""
+        """Close, Edit and Delete show while a note or a todo is on show, Refresh while their list or
+        the logs are."""
         view = self.active_view
         viewing = getattr(view, "viewing", None) is not None
         for button in ("#btn-close-note", "#btn-edit", "#btn-delete"):
             self.query_one(button).display = viewing
-        self.query_one("#btn-refresh").display = isinstance(view, NotesTab) and not viewing
+        self.query_one("#btn-refresh").display = isinstance(view, LogsView) or (isinstance(view, NotesTab) and not viewing)
 
     def on_mount(self) -> None:
         # The view keeps focus for its keys; tabs switch by click or with tab

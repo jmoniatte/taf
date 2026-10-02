@@ -150,6 +150,22 @@ class LogCommandTest(unittest.TestCase):
             ([date(2026, 9, 30), date(2026, 9, 29)], [(datetime(2026, 9, 30, 11, 0), "Coded @2h"), (datetime(2026, 9, 29, 9, 5), "Met @1h")]),
         )
         self.assertEqual(render_terminal([], color=False), "")
+        # A log with no message is kept, its space trimmed or not; a broken entry under a day is an error
+        self.assertEqual(
+            parse_markdown("# 2026-09-30\n* 11:00 - \n* 12:00 -\n"),
+            ([date(2026, 9, 30)], [(datetime(2026, 9, 30, 11, 0), ""), (datetime(2026, 9, 30, 12, 0), "")]),
+        )
+        with self.assertRaisesRegex(ValueError, r"'\* 9:00 - Met' is not a log"):
+            parse_markdown("# 2026-09-30\n* 9:00 - Met\n")
+        for line in ("- 09:00 - formatted", "  * 10:00 - indented", "*\t11:00 - tab"):
+            with self.assertRaisesRegex(ValueError, "is not a log"):
+                parse_markdown(f"# 2026-09-30\n{line}\n")
+        self.assertEqual(parse_markdown("* 9:00 - before any day\nA note\n"), ([], []))
+        # An empty day gets a header too, in its place among the others
+        self.assertEqual(
+            render_markdown(logs, [date(2026, 10, 1), date(2026, 9, 30)]),
+            "# 2026-10-01 - Thursday\n\n# 2026-09-30 - Wednesday\n* 11:00 - Coded @2h\n\n# 2026-09-29 - Tuesday\n* 09:05 - Met @1h\n",
+        )
 
     def test_a_database_that_cannot_open_is_an_error(self) -> None:
         self.config.database_path = self.tmp

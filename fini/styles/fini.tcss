@@ -246,6 +246,47 @@
    LOGS
    ═══════════════════════════════════════════════════════════════════════ */
 
+/* The week in the middle, its dates over its number, between Previous and Next; New Log on the right */
+#logs-controls {
+    height: 2;
+}
+
+#logs-controls .logs-side {
+    width: 1fr;
+    height: 2;
+    align: right top;
+}
+
+#logs-week {
+    width: auto;
+    height: 2;
+}
+
+/* "Sep 14 to Sep 20, 2026" is 22 wide at most */
+#logs-period {
+    width: 26;
+    height: 2;
+}
+
+#logs-period Static {
+    width: 100%;
+    height: 1;
+    text-align: center;
+}
+
+#logs-dates {
+    color: $blue;
+}
+
+#logs-week-number {
+    color: $yellow;
+}
+
+#logs-rule {
+    height: 1;
+    color: $comment;
+}
+
 #logs-scroll {
     height: 1fr;
     background: transparent;
@@ -260,6 +301,12 @@
 
 #logs-text {
     color: $fg;
+    link-color: $red;
+    link-background: transparent;
+    link-style: none;
+    link-color-hover: $red;
+    link-background-hover: transparent;
+    link-style-hover: underline;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════

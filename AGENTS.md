@@ -156,8 +156,8 @@ blocks; its styles map Textual's markdown onto the palette). Escape or `q` goes 
 is on show the footer has Close, back to the list like Escape, then a blue Edit and a red Delete
 (which asks first, Cancel focused), on the left
 (`FiniApp.refresh_footer`, also run when the tab changes, so they hide on Logs). While the list
-is on show, the footer has a green Refresh there instead, which reloads it like `r`, for todos
-written by `fini todo` meanwhile.
+is on show, the footer has a green Refresh there instead, which reloads it like `r` (the tab's
+`reload`), for todos written by `fini todo` meanwhile; it shows on Logs too, not on Stats.
 
 Editing (`NotesTab.edit`) opens the todo in `$EDITOR` (`editor.edit_text`, inside
 `App.suspend`) as markdown under YAML front matter with `id`, `created_at`, `updated_at`, `done_at` (the
@@ -194,10 +194,16 @@ already in the search, or the Todos tab's list would take focus and the app woul
 
 `FiniApp` opens the database when built (`database.open_database`); when it cannot,
 `FiniApp.database` is None, the error shows in the footer and in place of the list
-(`database_error`). `LogsView` reads the logs of the last `DAYS` (7) days, today included, once mounted
-(`logs.recent_logs`), like `fini -v 7` did, and shows them
-the way the Ruby fini's `TerminalPresenter` printed them: the last day first, each day's logs in
-the order they were logged, under a header with the day and the time spent on it all:
+(`database_error`). `LogsView` shows a week of logs, Monday to Sunday, this week at first
+(`LogsView.span`, `logs.logs_between`). The two rows over the dashed rule have, in their middle,
+the week's days in blue ("Sep 28 to Oct 4, 2026") over its ISO number in yellow ("Week 40"), in a
+box 26 wide (`#logs-period`) so the buttons never move, between Previous and Next, on the dates' row (grey, `tinted -plain`, not focusable, so the logs keep their keys; Next is
+disabled on this week), or `[` and `]` (`LogsView.page`, weeks back from this one). The two sides
+of the rows (`.logs-side`) are as wide, so the week stays centered with New Log on the right. With no logs, it says "No logs in week 38". Tests say which week is this one by patching
+`logs_view.today` (`run_app` in `tests/test_app.py`: Thursday, October 1, 2026, with `LOGS`).
+It shows them the way the Ruby fini's `TerminalPresenter` printed
+them: the last day first, each day's logs in the order they were logged, under a header with the
+day and the time spent on it all:
 
 ```
 2026-09-30 - Wednesday 3h05
@@ -215,7 +221,33 @@ cursor. Being plain text, the mouse selects it the way Textual selects any text,
 selects text well. Long lines wrap. Keep the text short: with all 3,000-odd logs of the real database
 (about 0.8 s to lay out), selecting and scrolling did not work in the terminal, most likely
 because the `Static` is laid out again on every refresh and a selection refreshes it on every mouse
-move. Seven days is about 60 lines.
+move. A week is about 60 lines, which is why the tab pages by week rather than show more.
+`LogsScroll` stays shown with no logs (the "No logs" text is inside it), so it keeps focus and
+the tab's keys.
+
+At the right end of the dates' row, a blue New Log button (or `n`) opens `NewLogScreen`, a wide
+window (90% of the screen, 140 at most) with a box that logs the message on Enter or Log, as
+`fini log` does (`logs.create_log` with the config's rules), then closes and shows this week
+again; Escape or Cancel closes it without logging. Under the box, `#log-preview` shows the message
+as it will be stored, parsed again on every key (`message.parse_message`): "Met Bob @2" shows a
+context `@2` until the `0m` makes it a duration. A database error shows there, in red, and the
+window stays open with the message.
+
+A click on a day's date (red, underlined under the mouse, an `@click` on `LogsText`) edits that
+day; `e` edits the last day with logs on show, or, with none, today in this week and the Sunday in another. A drag
+that selects text and ends on a date does not edit (`LogsText.action_edit_day` checks for a
+selection). The day opens alone in `$EDITOR` (`LogsView.edit_day`), in `fini log -e`'s markdown
+(`log_command.render_markdown`, given the day so an empty one still gets its header to write
+under), through `editor.edit_text` inside `App.suspend` as notes
+are edited. Once the file is written (`:w`), even unchanged, the day is replaced (`parse_markdown`,
+`logs.replace_days`), so its logs are read again with the config's current rules; quitting without
+writing (`:q`, told apart by the file's mtime, `editor.edit_written_text`) or an editor that exits
+with an error saves nothing. Another day's header with entries
+under it adds that day too, when it has no logs yet; a day that has logs saves nothing and keeps
+the edit, as its logs were never in the file, and so does a file without the day's own header. Emptying the day under its header deletes its logs without asking, as `-e` does. A date or
+time that does not exist, a broken log line, or a database error (say, locked by `fini log -e`)
+saves nothing and keeps the edit in a file whose path the error gives. `r`, or the footer's
+green Refresh (shown on Logs too), reads the days again, for logs written by `fini log` meanwhile.
 
 ## Stats
 
@@ -235,7 +267,9 @@ the figures, the graph and the months to it; the action bars stay whole, the oth
 gives focus back to the text; a `Select` also sends `Changed` when mounted, so only a pick by a
 focused dropdown does, or the app would open on Stats.
 
-Every log with a duration counts, except `+pto` (`stats.TIME_OFF`). The logs are read again
+Every log with a duration counts, except `+pto` (`stats.TIME_OFF`). A day with a `+pto` log
+and no other log with a duration (`stats.time_off_days`) is blue in the graph, whatever the
+action picked, with "Time off" in the legend. The logs are read again
 (`stats.load_entries`, all in memory, about 3,000 rows) each time the tab shows. The graph is about 110 columns wide; a narrower terminal scrolls it sideways.
 
 ## Command line
@@ -269,8 +303,12 @@ then runs `$EDITOR` (`vim` if unset) on it and, whatever the editor's exit statu
 (`parse_markdown`): every day whose `# YYYY-MM-DD` header is still in the file has all its logs
 deleted and replaced by the `* HH:MM - message` lines under it, parsed again with the current
 rules, in one transaction (`logs.replace_days`). Other lines are ignored, and a day whose header
-was removed keeps its logs. Times lose their seconds, as in the Ruby fini. A date or time that
-does not exist saves nothing and keeps the file, whose path the error gives.
+was removed keeps its logs. A log with no message (`* 11:00 -`) is kept. Times lose their
+seconds, as in the Ruby fini. A date or time that does not exist, or a line under a day that
+starts with `* ` or looks like a mistyped or reformatted log (`* 9:00 - x`, `- 09:00 - x`,
+indented; `ENTRY_LIKE`), which its day would lose, saves nothing and keeps the file, whose path
+the error gives. A COMMIT that fails (a locked database) is rolled back, so no transaction stays
+open.
 
 `fini todo <message>` writes a todo, and `fini note <message>` a note (`note_command.run`, their
 own parser, `__main__.note_parser`). The `#tags` at the end of the message go on their own line

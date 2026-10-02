@@ -22,13 +22,6 @@ class Log:
     duration: int | None
 
 
-def recent_logs(connection: sqlite3.Connection, days: int, today: date | None = None) -> list[Log]:
-    """The logs of the last days, today included, the last day first and each day in the order it
-    was logged, as the Ruby fini showed them."""
-    today = today or date.today()
-    return logs_between(connection, today - timedelta(days=days - 1), today)
-
-
 def logs_between(connection: sqlite3.Connection, first: date, last: date) -> list[Log]:
     """The logs from the first day to the last, both included, the last day first."""
     rows = connection.execute(
@@ -85,10 +78,11 @@ def replace_days(
             )
         for logged_at, message in entries:
             create_log(connection, message, action, context, logged_at)
+        # Inside the try: a COMMIT that fails, on a locked database, must not leave the transaction open
+        connection.execute("COMMIT")
     except BaseException:
         connection.execute("ROLLBACK")
         raise
-    connection.execute("COMMIT")
 
 
 def timestamp(moment: datetime) -> str:

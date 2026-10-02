@@ -1,32 +1,49 @@
 import asyncio
 import re
+import sqlite3
 import tempfile
 import unittest
 from datetime import date, timedelta
 from pathlib import Path
+from unittest.mock import patch
 
-from textual.widgets import Select, Static, TabbedContent
+from textual.widgets import Input, Select, Static, TabbedContent
 from tui_kit.help_screen import HelpScreen
 from tui_kit.theme import list_themes, load_palette
 
 from fini.app import TABS, FiniApp, FooterMessage, load_stylesheet
 from fini.config import Config
 from fini.database import open_database
+from fini.logs import create_log
+from fini.message import Inference
 from fini.notes import TODO, create_note
 from fini.widgets.stats_view import ALL_ACTIONS
-from fini.widgets import LogsScroll, NotesTab, NotesTable, StatsScroll, StatsView, TodosTab
+from fini.widgets import LogsScroll, LogsView, NotesTab, NotesTable, StatsScroll, StatsView, TodosTab
+from fini.widgets.logs_view import HINT, NewLogScreen
+from test_notes_view import python_editor, suspend, writes
 
 # The Logs tab shows the last 7 days, so the logs are dated from today
-TODAY = date.today()
+
+
+def logs_around(today: date) -> tuple:
+    yesterday = today - timedelta(days=1)
+    return (
+        ("Met with Brian @30m", f"{yesterday} 09:00:00.000000", "Met with Brian", "meet", "rails", 30),
+        ("Reviewed PR [chat] @15m", f"{today} 15:14:26.000000", "Reviewed PR [chat]", "review", "rails", 15),
+        ("PR for deleted users @1h45", f"{today} 15:13:08.000000", "PR for deleted users", "code", "rails", 105),
+        ("Admin stuff", f"{yesterday} 10:00:00.000000", "Admin stuff", "admin", None, None),
+        # A week before
+        ("Old news", f"{today - timedelta(days=7)} 23:59:00.000000", "Old news", "code", "rails", 5),
+    )
+
+
+# The Logs tab shows this week, Monday to Sunday: its tests say today is Thursday, October 1, 2026, in week 40
+TODAY = date(2026, 10, 1)
 YESTERDAY = TODAY - timedelta(days=1)
-LOGS = (
-    ("Met with Brian @30m", f"{YESTERDAY} 09:00:00.000000", "Met with Brian", "meet", "rails", 30),
-    ("Reviewed PR [chat] @15m", f"{TODAY} 15:14:26.000000", "Reviewed PR [chat]", "review", "rails", 15),
-    ("PR for deleted users @1h45", f"{TODAY} 15:13:08.000000", "PR for deleted users", "code", "rails", 105),
-    ("Admin stuff", f"{YESTERDAY} 10:00:00.000000", "Admin stuff", "admin", None, None),
-    # Eight days ago: too old to show
-    ("Old news", f"{TODAY - timedelta(days=7)} 23:59:00.000000", "Old news", "code", "rails", 5),
-)
+LOGS = logs_around(TODAY)
+# The Stats tab counts from the real today
+REAL_TODAY = date.today()
+STATS_LOGS = logs_around(REAL_TODAY)
 
 
 class AppTest(unittest.TestCase):
@@ -45,9 +62,11 @@ class AppTest(unittest.TestCase):
                     )
                 database.close()
                 app = FiniApp(config)
-                async with app.run_test(size=(80, 24)) as pilot:
-                    await pilot.pause()
-                    await body(app, pilot)
+                # The fixed logs' week is this one; without them, logs are written now
+                with patch("fini.widgets.logs_view.today", return_value=TODAY if logs is LOGS else REAL_TODAY):
+                    async with app.run_test(size=(80, 24)) as pilot:
+                        await pilot.pause()
+                        await body(app, pilot)
 
         asyncio.run(main())
 
@@ -98,7 +117,7 @@ class AppTest(unittest.TestCase):
             # The colors follow a theme change
             app.apply_theme("dracula")
             await pilot.pause()
-            self.assertIn(f"[rgb(255,85,85)]{TODAY}", text.render().markup)
+            self.assertIn(f"[rgb(255,85,85) @click='edit_day('{TODAY}')']{TODAY}", text.render().markup)
             self.assertEqual(load_palette("dracula")["red"].lower(), "#ff5555")
 
         self.run_app(body, logs=LOGS)
@@ -115,6 +134,17 @@ class AppTest(unittest.TestCase):
             await pilot.pause()
             selected = "15:13 - PR for deleted users 1h45 [+code @rails]\n* 15:14 - Reviewed PR"
             self.assertEqual(app.screen.get_selected_text(), selected)
+            # A drag that ends on a day's date selects, and does not edit the day
+            await pilot.mouse_down(text, offset=(20, 2))
+            await pilot.hover(text, offset=(5, 4))
+            await pilot.mouse_up(text, offset=(5, 4))
+            await pilot.pause()
+            self.assertTrue(app.screen.get_selected_text())
+            self.assertFalse(app.query_one(FooterMessage).display)
+            await pilot.mouse_down(text, offset=(2, 1))
+            await pilot.hover(text, offset=(20, 2))
+            await pilot.mouse_up(text, offset=(20, 2))
+            await pilot.pause()
             copied = []
             app.copy_to_clipboard = copied.append
             await pilot.press("y")
@@ -124,8 +154,8 @@ class AppTest(unittest.TestCase):
 
     def test_no_logs_and_a_database_that_cannot_open_say_so(self) -> None:
         async def body(app, pilot) -> None:
-            self.assertEqual(app.query_one("#logs-empty", Static).render().plain, "No logs in the last 7 days")
-            self.assertFalse(app.query_one(LogsScroll).display)
+            self.assertEqual(app.query_one("#logs-empty", Static).render().plain, f"No logs in week {REAL_TODAY.isocalendar().week}")
+            self.assertFalse(str(app.query_one("#logs-text", Static).render()))
 
         self.run_app(body)
 
@@ -144,6 +174,215 @@ class AppTest(unittest.TestCase):
                     await broken(app, pilot)
 
             asyncio.run(main())
+
+    def test_new_log_opens_a_window_that_reads_the_message_on_every_key(self) -> None:
+        async def body(app, pilot) -> None:
+            await pilot.press("tab", "tab")
+            await pilot.pause()
+            # Escape closes the window and logs nothing
+            await pilot.press("n", *"Met", "escape")
+            await pilot.pause()
+            self.assertNotIsInstance(app.screen, NewLogScreen)
+            await pilot.click("#btn-new-log")
+            await pilot.pause()
+            self.assertIsInstance(app.screen, NewLogScreen)
+            preview = app.screen.query_one("#log-preview", Static)
+            box = app.screen.query_one("#log-input", Input)
+            self.assertTrue(box.has_focus)
+            self.assertEqual(preview.render().plain, HINT)
+            await pilot.press(*"Met Bob @20")
+            await pilot.pause()
+            # Not a duration yet: a context
+            self.assertEqual(preview.render().plain, "Met Bob [+meet @20]")
+            await pilot.press("m")
+            await pilot.pause()
+            self.assertEqual(preview.render().plain, "Met Bob 20m [+meet @rails]")
+            await pilot.press("enter")
+            await pilot.pause()
+            self.assertNotIsInstance(app.screen, NewLogScreen)
+            self.assertIsInstance(app.focused, LogsScroll)
+            self.assertIn("Met Bob 20m [+meet @rails]", str(app.query_one("#logs-text", Static).render()))
+            self.assertEqual(app.query_one(FooterMessage).render().plain.strip(), "Logged: Met Bob 20m [+meet @rails]")
+            stored = app.database.execute("SELECT message, text, action, context, duration FROM logs").fetchall()
+            self.assertEqual([tuple(row) for row in stored], [("Met Bob @20m", "Met Bob", "meet", "rails", 20)])
+
+        rules = Config(theme="onedark", action=Inference("code", [("meet", [re.compile(r"^Met\b")])]), context=Inference("rails"))
+        self.run_app(body, config=rules)
+
+    def test_the_logs_page_by_week_from_monday(self) -> None:
+        async def body(app, pilot) -> None:
+            await pilot.press("tab", "tab")
+            await pilot.pause()
+            dates = app.query_one("#logs-dates", Static)
+            week = app.query_one("#logs-week-number", Static)
+            previous = app.query_one("#btn-previous-week")
+            text = app.query_one("#logs-text", Static)
+            next_week = app.query_one("#btn-next-week")
+            self.assertEqual((dates.render().plain, week.render().plain), ("Sep 28 to Oct 4, 2026", "Week 40"))
+            # Previous and Next stay put whatever the length of the dates
+            places = (previous.region.x, next_week.region.x)
+            # Nothing after this week
+            self.assertTrue(next_week.disabled)
+            await pilot.press("right_square_bracket")
+            await pilot.pause()
+            self.assertEqual(app.query_one(LogsView).page, 0)
+            await pilot.click("#btn-previous-week")
+            await pilot.pause()
+            self.assertEqual((dates.render().plain, week.render().plain), ("Sep 21 to Sep 27, 2026", "Week 39"))
+            self.assertEqual((previous.region.x, next_week.region.x), places)
+            self.assertFalse(next_week.disabled)
+            self.assertEqual(str(text.render()).splitlines()[1], "* 23:59 - Old news 5m [+code @rails]")
+            # The logs keep focus for the keys
+            self.assertIsInstance(app.focused, LogsScroll)
+            await pilot.press("left_square_bracket")
+            await pilot.pause()
+            empty = app.query_one("#logs-empty", Static)
+            self.assertTrue(empty.display)
+            self.assertEqual(empty.render().plain, "No logs in week 38")
+            await pilot.click("#btn-next-week")
+            await pilot.press("right_square_bracket")
+            await pilot.pause()
+            self.assertIn("Met with Brian", str(text.render()))
+
+        self.run_app(body, logs=LOGS)
+
+    def test_e_or_a_click_edits_a_day_and_refresh_reads_them_again(self) -> None:
+        async def body(app, pilot) -> None:
+            await pilot.press("tab", "tab")
+            await pilot.pause()
+            seen = Path(app.config.database_path).parent / "seen.md"
+
+            def editor(old: str, new: str) -> str:
+                """Keeps a copy of the file as the editor got it, then replaces old with new."""
+                return python_editor(
+                    f"import sys, shutil; shutil.copy(sys.argv[1], {str(seen)!r}); path = sys.argv[1]"
+                    f"; text = open(path).read().replace({old!r}, {new!r}); open(path, 'w').write(text)"
+                )
+
+            def stored() -> list[str]:
+                return [row["text"] for row in app.database.execute("SELECT text FROM logs ORDER BY logged_at")]
+
+            # e edits the last day, today, alone
+            with patch.dict("os.environ", {"EDITOR": editor("Reviewed PR [chat] @15m", "Reviewed PR @20m")}):
+                await pilot.press("e")
+                await pilot.pause()
+            self.assertEqual(
+                seen.read_text(), f"# {TODAY} - {TODAY:%A}\n* 15:13 - PR for deleted users @1h45\n* 15:14 - Reviewed PR [chat] @15m"
+            )
+            self.assertIn("* 15:14 - Reviewed PR 20m", str(app.query_one("#logs-text", Static).render()))
+            self.assertEqual(app.query_one(FooterMessage).render().plain.strip(), f"Logs of {TODAY:%A} {TODAY:%b} {TODAY.day} updated")
+            # A click on yesterday's date, under today's header, 2 logs and a blank line, edits yesterday
+            text = app.query_one("#logs-text", Static)
+            with patch.dict("os.environ", {"EDITOR": editor("\n* 10:00 - Admin stuff", "")}):
+                await pilot.click(text, offset=(3, 4))
+                await pilot.pause()
+            self.assertTrue(seen.read_text().startswith(f"# {YESTERDAY} - {YESTERDAY:%A}\n"))
+            self.assertEqual(stored(), ["Old news", "Met with Brian", "PR for deleted users", "Reviewed PR"])
+            # No logs in the week on show: its Sunday, under which a log can be written
+            await pilot.press("left_square_bracket", "left_square_bracket")
+            await pilot.pause()
+            empty_day = date(2026, 9, 20)
+            header = f"# {empty_day} - {empty_day:%A}"
+            with patch.dict("os.environ", {"EDITOR": editor(header, f"{header}\n* 08:00 - Wrote docs @1h")}):
+                await pilot.press("e")
+                await pilot.pause()
+            self.assertEqual(seen.read_text(), header)
+            self.assertIn("* 08:00 - Wrote docs 1h", str(app.query_one("#logs-text", Static).render()))
+            # A day with logs added under its own header saves nothing: its logs were never in the file
+            with patch.dict("os.environ", {"EDITOR": editor(header, f"{header}\n\n# {YESTERDAY}\n* 08:00 - Moved")}):
+                await pilot.press("e")
+                await pilot.pause()
+            message = app.query_one(FooterMessage).render().plain
+            self.assertIn(f"{YESTERDAY} already has logs: edit it on its own. Nothing saved", message)
+            Path(re.search(r"/\S+\.md", message.replace("\n", "")).group(0)).unlink()
+            self.assertNotIn("Moved", stored())
+            self.assertIn("Met with Brian", stored())
+            # A day with no logs yet may be added
+            with patch.dict("os.environ", {"EDITOR": editor("Wrote docs @1h", "Wrote docs @1h\n\n# 2026-09-19 - Saturday\n* 10:00 - Weekend deploy @1h")}):
+                await pilot.press("e")
+                await pilot.pause()
+            self.assertEqual(app.query_one(FooterMessage).render().plain.strip(), "Logs of Sunday Sep 20, Saturday Sep 19 updated")
+            self.assertIn("Weekend deploy", stored())
+            self.assertIn("Wrote docs", stored())
+            # A header removed by mistake saves nothing
+            with patch.dict("os.environ", {"EDITOR": editor(header, "")}):
+                await pilot.press("e")
+                await pilot.pause()
+            message = app.query_one(FooterMessage).render().plain
+            self.assertIn(f"The header of {empty_day} is gone. Nothing saved", message)
+            Path(re.search(r"/\S+\.md", message.replace("\n", "")).group(0)).unlink()
+            # A date that does not exist saves nothing and keeps the edit
+            with patch.dict("os.environ", {"EDITOR": writes("# 2026-02-31 - Tuesday\n* 08:00 - Lost\n")}):
+                await pilot.press("e")
+                await pilot.pause()
+            message = app.query_one(FooterMessage).render().plain
+            self.assertIn("'# 2026-02-31 - Tuesday' has no valid date. Nothing saved; your edit is kept in", message)
+            kept = Path(re.search(r"/\S+\.md", message.replace("\n", "")).group(0))
+            self.assertIn("Lost", kept.read_text())
+            kept.unlink()
+            self.assertNotIn("Lost", stored())
+            # Logged elsewhere, by fini log, it shows once refreshed
+            await pilot.press("right_square_bracket", "right_square_bracket")
+            create_log(app.database, "From the shell @5m")
+            refresh = app.query_one("#btn-refresh")
+            self.assertTrue(refresh.display)
+            await pilot.click("#btn-refresh")
+            await pilot.pause()
+            self.assertIn("From the shell 5m", str(app.query_one("#logs-text", Static).render()))
+
+        with patch("fini.app.FiniApp.suspend", suspend):
+            self.run_app(body, logs=LOGS)
+
+    def test_a_written_day_is_read_again_with_the_current_rules_even_unchanged(self) -> None:
+        async def body(app, pilot) -> None:
+            await pilot.press("tab", "tab")
+            await pilot.pause()
+
+            def actions() -> list[str]:
+                return [row["action"] for row in app.database.execute("SELECT action FROM logs WHERE logged_at LIKE ? ORDER BY logged_at", (f"{YESTERDAY}%",))]
+
+            # Quit without writing: nothing changes
+            text = app.query_one("#logs-text", Static)
+            with patch.dict("os.environ", {"EDITOR": python_editor("pass")}):
+                await pilot.click(text, offset=(3, 4))
+                await pilot.pause()
+            self.assertEqual(actions(), ["meet", "admin"])
+            # Written as it was: the rules of today's config name the actions again
+            rewrite = python_editor("import sys; path = sys.argv[1]; text = open(path).read(); open(path, 'w').write(text)")
+            with patch.dict("os.environ", {"EDITOR": rewrite}):
+                await pilot.click(text, offset=(3, 4))
+                await pilot.pause()
+            self.assertEqual(actions(), ["talk", "talk"])
+
+        with patch("fini.app.FiniApp.suspend", suspend):
+            self.run_app(body, config=Config(theme="onedark", action=Inference("talk")), logs=LOGS)
+
+    def test_a_database_error_on_logging_or_saving_keeps_the_work(self) -> None:
+        async def body(app, pilot) -> None:
+            await pilot.press("tab", "tab")
+            await pilot.pause()
+            locked = sqlite3.OperationalError("database is locked")
+            with patch("fini.widgets.logs_view.create_log", side_effect=locked):
+                await pilot.press("n", *"Coded @1h", "enter")
+                await pilot.pause()
+            # The window stays open with the message, and says why
+            self.assertIsInstance(app.screen, NewLogScreen)
+            self.assertEqual(app.screen.query_one("#log-preview", Static).render().plain, "Cannot log: database is locked")
+            self.assertEqual(app.screen.query_one("#log-input", Input).value, "Coded @1h")
+            await pilot.press("escape")
+            await pilot.pause()
+            with patch("fini.widgets.logs_view.replace_days", side_effect=locked), patch.dict("os.environ", {"EDITOR": writes(f"# {TODAY}\n* 08:00 - Kept\n")}):
+                await pilot.press("e")
+                await pilot.pause()
+            message = app.query_one(FooterMessage).render().plain
+            self.assertIn("Cannot save: database is locked. Your edit is kept in", message)
+            kept = Path(re.search(r"/\S+\.md", message.replace("\n", "")).group(0))
+            self.assertIn("Kept", kept.read_text())
+            kept.unlink()
+            self.assertTrue(app.is_running)
+
+        with patch("fini.app.FiniApp.suspend", suspend):
+            self.run_app(body, logs=LOGS)
 
     def test_help_shows_the_apps_keys_and_the_tabs_own(self) -> None:
         async def help_keys(app, pilot) -> dict[str, list[str]]:
@@ -186,7 +425,7 @@ class AppTest(unittest.TestCase):
             self.assertEqual(await help_keys(app, pilot), {"GENERAL": general, "TODO": ["escape", "e", "⇧+enter", "y", "j", "k"]})
             await pilot.press("tab")
             await pilot.pause()
-            self.assertEqual(await help_keys(app, pilot), {"GENERAL": general, "LOGS": ["j", "k"]})
+            self.assertEqual(await help_keys(app, pilot), {"GENERAL": general, "LOGS": ["n", "e", "[", "]", "r", "j", "k"]})
             # The footer's Help button opens the same
             await pilot.click("#btn-help")
             await pilot.pause()
@@ -204,7 +443,7 @@ class AppTest(unittest.TestCase):
             self.assertIsInstance(app.focused, StatsScroll)
             period = app.query_one("#stats-period", Select)
             action = app.query_one("#stats-action", Select)
-            self.assertEqual([str(option[0]) for option in period._options], ["Last 12 months", str(TODAY.year)][: len(period._options)])
+            self.assertEqual([str(option[0]) for option in period._options], ["Last 12 months", str(REAL_TODAY.year)][: len(period._options)])
             self.assertEqual(
                 [str(option[0]) for option in action._options], ["All actions", "code (1.8 h)", "meet (0.5 h)", "review (0.2 h)"]
             )
@@ -223,7 +462,7 @@ class AppTest(unittest.TestCase):
             # The year keeps the action
             period.value = 1
             await pilot.pause()
-            self.assertEqual(app.query_one(StatsView).periods[1].label, str(TODAY.year))
+            self.assertEqual(app.query_one(StatsView).periods[1].label, str(REAL_TODAY.year))
             self.assertEqual(action.value, "code")
 
             # Percentages: no hours anywhere, and the choice is kept in the config
@@ -241,7 +480,7 @@ class AppTest(unittest.TestCase):
             self.assertEqual(text.splitlines()[0], "code 71%   meet 19%   review 10%")
             self.assertNotRegex(text, r"\d h\b")
 
-        self.run_app(body, logs=LOGS)
+        self.run_app(body, logs=STATS_LOGS)
 
     def test_exit_sits_at_the_right_end_of_the_tabs_row_and_quits(self) -> None:
         async def body(app, pilot) -> None:

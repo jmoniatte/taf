@@ -26,11 +26,24 @@ def edit_text(text: str, prefix: str) -> str:
 
     EditorError when the editor cannot start or exits with an error (:cq in vim), so nothing is saved.
     """
+    return _edit(text, prefix)[0]
+
+
+def edit_written_text(text: str, prefix: str) -> str | None:
+    """edit_text, but None when the editor quit without writing the file (:q in vim), even
+    though the text may be the same either way."""
+    content, written = _edit(text, prefix)
+    return content if written else None
+
+
+def _edit(text: str, prefix: str) -> tuple[str, bool]:
+    """The text as saved, and whether the editor wrote the file."""
     fd, name = tempfile.mkstemp(prefix=prefix, suffix=".md")
     path = Path(name)
     try:
         with open(fd, "w", encoding="utf-8") as file:
             file.write(text)
+        before = path.stat().st_mtime_ns
         command = [*editor_command(), str(path)]
         try:
             result = subprocess.run(command)
@@ -38,7 +51,7 @@ def edit_text(text: str, prefix: str) -> str:
             raise EditorError(f"Cannot start {command[0]}: {error.strerror or error}") from None
         if result.returncode != 0:
             raise EditorError(f"{command[0]} exited with status {result.returncode}, nothing was saved")
-        return path.read_text(encoding="utf-8").strip("\r\n")
+        return path.read_text(encoding="utf-8").strip("\r\n"), path.stat().st_mtime_ns != before
     finally:
         path.unlink(missing_ok=True)
 

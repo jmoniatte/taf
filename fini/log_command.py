@@ -9,6 +9,7 @@ import sys
 import tempfile
 from datetime import date, datetime, timedelta
 from pathlib import Path
+from collections.abc import Iterable
 from typing import TextIO
 
 from .config import Config
@@ -27,7 +28,10 @@ ITALIC = "\033[3m"
 CLEAR = "\033[H\033[2J\033[3J"
 
 DAY_HEADER = re.compile(r"^# (\d{4}-\d{2}-\d{2})")
-ENTRY = re.compile(r"^\* (\d{2}:\d{2}) - (.+)$")
+# The message may be empty, as some old logs are, and an editor may trim the space before it
+ENTRY = re.compile(r"^\* (\d{2}:\d{2}) -(?: (.*))?$")
+# What an entry may look like once mistyped or reformatted: "- 9:00 - x", "  * 10:00 - x"
+ENTRY_LIKE = re.compile(r"^\s*[-*+]\s*\d{1,2}:\d{2}")
 
 
 def run(
@@ -121,14 +125,17 @@ def render_terminal(logs: list[Log], color: bool = True) -> str:
     return "".join(f"{line}\n" for line in lines)
 
 
-def render_markdown(logs: list[Log]) -> str:
-    """The logs by day for the editor, each as it was typed:
+def render_markdown(logs: list[Log], empty_days: Iterable[date] = ()) -> str:
+    """The logs by day for the editor, each as it was typed, the last day first; empty_days get a
+    header too, so logs can be written under it:
 
     # 2026-09-30 - Wednesday
     * 09:00 - Reviewed PR @15m
     """
+    logs_by_day = dict(by_day(logs))
     days = []
-    for day, day_logs in by_day(logs):
+    for day in sorted({*logs_by_day, *empty_days}, reverse=True):
+        day_logs = logs_by_day.get(day, [])
         lines = [f"# {day} - {day:%A}", *(f"* {log.logged_at:%H:%M} - {log.message}" for log in day_logs), ""]
         days.append("\n".join(lines))
     return "\n".join(days)
@@ -137,7 +144,8 @@ def render_markdown(logs: list[Log]) -> str:
 def parse_markdown(content: str) -> tuple[list[date], list[tuple[datetime, str]]]:
     """The days whose header is in the file, and every entry under one, as (when, message).
 
-    Other lines are ignored; ValueError for a date or time that does not exist.
+    Other lines are ignored; ValueError for a date or time that does not exist, and for a line
+    under a day that starts like an entry but is not one, since its day would lose it.
     """
     days: list[date] = []
     entries: list[tuple[datetime, str]] = []
@@ -148,7 +156,9 @@ def parse_markdown(content: str) -> tuple[list[date], list[tuple[datetime, str]]
             days.append(day)
         elif day is not None and (entry := ENTRY.match(line)):
             time = _parse(entry.group(1), "%H:%M", f"'{line}' has no valid time").time()
-            entries.append((datetime.combine(day, time), entry.group(2)))
+            entries.append((datetime.combine(day, time), entry.group(2) or ""))
+        elif day is not None and (line.startswith("* ") or ENTRY_LIKE.match(line)):
+            raise ValueError(f"'{line}' is not a log, '* HH:MM - message'")
     return days, entries
 
 
