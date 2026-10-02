@@ -262,7 +262,12 @@ shares, or the action's share of each month). Show is saved as `stats_show` in t
 (selectable, `y` copies): a line of figures, a GitHub-like graph of the days (a column per week, a
 row per weekday, Monday first; four shades of green blended into `bg`, by the quartiles of the days
 with time, `stats.levels`), the share of time per action as bars, and a bar per month, its actions
-stacked. Each action has a color by its rank in the period (`ACTION_COLORS`). One action narrows
+stacked, then a line chart over the months (`month_chart`, drawn in braille dots by `BrailleGrid`, 2
+dots by 4 a cell; `CHART_MONTH_WIDTH` cells a month, `CHART_HEIGHT` rows): one line per action
+for the first `CHART_ACTIONS` (3), the most time in the period first, all on one scale (hours, or
+shares of each month), rounded up to 10; the action picked alone. More lines crowd the bottom. A cell has one color: where
+lines cross, the first action's wins. One scale on purpose: rows each to their own scale made a
+small action's peak look as big as code's. Each action has a color by its rank in the period (`ACTION_COLORS`). One action narrows
 the figures, the graph and the months to it; the action bars stay whole, the others gray. A pick
 gives focus back to the text; a `Select` also sends `Changed` when mounted, so only a pick by a
 focused dropdown does, or the app would open on Stats.

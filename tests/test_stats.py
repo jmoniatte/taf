@@ -8,8 +8,8 @@ from tui_kit.theme import load_palette
 from fini.database import open_database
 from fini.logs import create_log
 from fini.message import Inference
-from fini.stats import Entry, level, levels, load_entries, minutes_by_action, minutes_by_month, periods, time_off_days
-from fini.widgets.stats_view import DAY, graph
+from fini.stats import Entry, Period, level, levels, load_entries, minutes_by_action, minutes_by_month, periods, time_off_days
+from fini.widgets.stats_view import CHART_HEIGHT, DAY, BrailleGrid, graph, month_chart
 
 ENTRIES = [
     Entry(date(2024, 12, 23), "code", 60),
@@ -70,6 +70,31 @@ class StatsTest(unittest.TestCase):
         self.assertEqual(blue, [DAY, DAY])
         self.assertIn("Time off", text.plain)
 
+    def test_the_actions_are_lines_of_braille_dots_on_one_scale(self) -> None:
+        grid = BrailleGrid(2, 1)
+        grid.line((0, 0), (3, 3), "red")
+        # A diagonal through both cells: the first two dots in one, the last two in the other
+        self.assertEqual(grid.row(0).plain, chr(0x2800 + 0x01 + 0x10) + chr(0x2800 + 0x04 + 0x80))
+        entries = [
+            Entry(date(2025, 11, 3), "code", 480),
+            Entry(date(2025, 12, 1), "code", 240),
+            Entry(date(2025, 12, 2), "meet", 240),
+            *(Entry(date(2025, 12, 3), name, 6) for name in ("ops", "debug", "learn", "support", "admin")),
+        ]
+        palette = load_palette("onedark")
+        colors = dict(zip(("code", "meet", "ops", "debug", "learn", "support", "admin"), ("blue", "purple", "yellow", "orange", "cyan", "red", "green")))
+        period = Period("Last 12 months", date(2025, 10, 1), date(2026, 9, 30))
+        lines = month_chart(entries, period, None, colors, palette, date(2026, 1, 15), percentages=True).plain.splitlines()
+        # Code is all of November: the scale goes to 100%, from the first month with time to this one
+        self.assertEqual(len(lines), CHART_HEIGHT + 4)
+        self.assertTrue(lines[0].startswith("100% │"))
+        self.assertTrue(lines[CHART_HEIGHT - 1].startswith("  0% │"))
+        self.assertEqual(lines[CHART_HEIGHT + 1].split(), ["Nov", "2026"])
+        # The first CHART_ACTIONS actions only
+        self.assertEqual(lines[-1].split(), ["──", "code", "──", "meet", "──", "ops"])
+        picked = month_chart(entries, period, "meet", colors, palette, date(2026, 1, 15), percentages=False).plain.splitlines()
+        self.assertTrue(picked[0].startswith("10 h │"))
+        self.assertEqual(picked[-1].split(), ["──", "meet"])
 
 if __name__ == "__main__":
     unittest.main()

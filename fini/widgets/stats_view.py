@@ -1,3 +1,4 @@
+import math
 from datetime import date, timedelta
 
 from rich.color import Color, blend_rgb
@@ -30,6 +31,11 @@ ACTION_COLORS = ("blue", "purple", "yellow", "orange", "cyan", "red", "green")
 # How much of the green each shade has over the background, for 1 to 4
 SHADES = (0.35, 0.55, 0.8, 1.0)
 BAR_WIDTH = 40
+# The line chart over the months: cells per month, rows, and how many actions, the most time first,
+# have a line; more crowd the bottom of the chart
+CHART_MONTH_WIDTH = 4
+CHART_HEIGHT = 12
+CHART_ACTIONS = 3
 WEEKDAYS = ("Mon", "", "Wed", "", "Fri", "", "")
 # The action dropdown's value for all of them
 ALL_ACTIONS = ""
@@ -182,6 +188,8 @@ def stats_text(
         action_bars(period_entries, action, colors, palette, percentages),
         section(month_title(action, percentages), palette),
         month_bars(period_entries, action, colors, percentages),
+        section(f"+{action} over the months" if action else "The actions over the months", palette),
+        month_chart(period_entries, period, action, colors, palette, today, percentages),
     ]
     text = Text("\n\n").join(parts)
     text.no_wrap = True
@@ -356,6 +364,141 @@ def month_bars(period_entries: list[Entry], action: str | None, colors: dict[str
             line.append(f" {hours(done):>6}")
         lines.append(line)
     return Text("\n").join(lines)
+
+
+def month_chart(
+    period_entries: list[Entry],
+    period: Period,
+    action: str | None,
+    colors: dict[str, str],
+    palette: dict[str, str],
+    today: date,
+    percentages: bool,
+) -> Text:
+    """A line chart in braille dots, a column of CHART_MONTH_WIDTH cells per month of the period up
+    to this one, all lines on one scale: the hours of the first CHART_ACTIONS actions, or their
+    shares of each month; the action picked alone."""
+    totals = minutes_by_action(period_entries)
+    if not totals:
+        return Text("No time logged")
+    by_month = dict(minutes_by_month(period_entries))
+    months = month_range(max(period.first, min(by_month)), min(period.last, today))
+    names = [action] if action else [name for name, _ in totals[:CHART_ACTIONS]]
+    series = []
+    for name in names:
+        values = []
+        for month in months:
+            month_totals = by_month.get(month, {})
+            spent = month_totals.get(name, 0)
+            everything = sum(month_totals.values())
+            values.append(100 * spent / everything if percentages and everything else spent / 60)
+        series.append((name, values))
+    top = round_up(max(max(values) for _, values in series), 10)
+    unit = "%" if percentages else " h"
+    width = CHART_MONTH_WIDTH * len(months)
+    grid = BrailleGrid(width, CHART_HEIGHT)
+    # The first action last, so it stays on top where lines cross
+    for name, values in reversed(series):
+        color = colors[name]
+        points = [
+            (CHART_MONTH_WIDTH * (2 * index + 1), round((1 - value / top) * (grid.dots_high - 1)))
+            for index, value in enumerate(values)
+        ]
+        if len(points) == 1:
+            grid.dot(*points[0], color)
+        for start, end in zip(points, points[1:]):
+            grid.line(start, end, color)
+    labels = {0: f"{top}{unit}", CHART_HEIGHT // 2: f"{top // 2}{unit}", CHART_HEIGHT - 1: f"0{unit}"}
+    margin = max(map(len, labels.values())) + 1
+    text = Text()
+    for row in range(CHART_HEIGHT):
+        text.append(labels.get(row, "").rjust(margin - 1) + " ", style=palette["comment"])
+        text.append("│", style=palette["bg-light"])
+        text.append_text(grid.row(row))
+        text.append("\n")
+    text.append(" " * margin + "└" + "─" * width, style=palette["bg-light"])
+    text.append("\n")
+    text.append(" " * (margin + 1) + month_labels(months), style=palette["comment"])
+    text.append("\n\n")
+    legend = Text(" " * (margin + 1))
+    for index, (name, _) in enumerate(series):
+        legend.append("── ", style=colors[name])
+        legend.append(name)
+        if index < len(series) - 1:
+            legend.append("   ")
+    text.append_text(legend)
+    return text
+
+
+class BrailleGrid:
+    """Cells of braille characters, each 2 dots wide and 4 high, and the color last drawn in each."""
+
+    # The bit of each dot, by its column and row in the cell
+    BITS = ((0x01, 0x02, 0x04, 0x40), (0x08, 0x10, 0x20, 0x80))
+
+    def __init__(self, width: int, height: int) -> None:
+        self.width = width
+        self.height = height
+        self.dots_high = 4 * height
+        self.cells = [[0] * width for _ in range(height)]
+        self.colors: list[list[str | None]] = [[None] * width for _ in range(height)]
+
+    def dot(self, x: int, y: int, color: str) -> None:
+        column, row = x // 2, y // 4
+        if 0 <= column < self.width and 0 <= row < self.height:
+            self.cells[row][column] |= self.BITS[x % 2][y % 4]
+            self.colors[row][column] = color
+
+    def line(self, start: tuple[int, int], end: tuple[int, int], color: str) -> None:
+        """Bresenham's line, every dot from start to end."""
+        (x, y), (x1, y1) = start, end
+        dx, dy = abs(x1 - x), -abs(y1 - y)
+        step_x, step_y = (1 if x < x1 else -1), (1 if y < y1 else -1)
+        error = dx + dy
+        while True:
+            self.dot(x, y, color)
+            if (x, y) == (x1, y1):
+                return
+            double = 2 * error
+            if double >= dy:
+                error += dy
+                x += step_x
+            if double <= dx:
+                error += dx
+                y += step_y
+
+    def row(self, row: int) -> Text:
+        text = Text()
+        for cell, color in zip(self.cells[row], self.colors[row]):
+            text.append(chr(0x2800 + cell) if cell else " ", style=color or "")
+        return text
+
+
+def round_up(value: float, step: int) -> int:
+    """value rounded up to a multiple of step, step at least."""
+    return max(step, math.ceil(value / step) * step)
+
+
+def month_range(first: date, last: date) -> list[date]:
+    """The first day of each month from first's to last's."""
+    months = []
+    month = first.replace(day=1)
+    while month <= last:
+        months.append(month)
+        month = (month + timedelta(days=31)).replace(day=1)
+    return months
+
+
+def month_labels(months: list[date]) -> str:
+    """Each month's name under the middle of its column, a year for January, while they fit; the
+    years first, so a month next to one gives way."""
+    labels = [" "] * (CHART_MONTH_WIDTH * len(months) + 4)
+    for index, month in sorted(enumerate(months), key=lambda pair: pair[1].month != 1):
+        name = str(month.year) if month.month == 1 else month.strftime("%b")
+        column = CHART_MONTH_WIDTH * index + CHART_MONTH_WIDTH // 2 - len(name) // 2
+        if column >= 0 and all(cell == " " for cell in labels[max(column - 1, 0) : column + len(name) + 1]):
+            labels[column : column + len(name)] = name
+    return "".join(labels).rstrip()
 
 
 def amount(minutes: int, everything: int, percentages: bool) -> str:
