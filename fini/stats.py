@@ -4,6 +4,9 @@ import sqlite3
 from collections import Counter, defaultdict
 from dataclasses import dataclass
 from datetime import date, timedelta
+from functools import cache
+
+import holidays
 
 # Time off, not work: left out of every figure
 TIME_OFF = "pto"
@@ -38,6 +41,19 @@ def time_off_days(connection: sqlite3.Connection, entries: list[Entry]) -> set[d
     """The days with time off and no work: a time off log, and no other log with a duration."""
     rows = connection.execute("SELECT DISTINCT substr(logged_at, 1, 10) AS day FROM logs WHERE action = ?", (TIME_OFF,))
     return {date.fromisoformat(row["day"]) for row in rows} - {entry.day for entry in entries}
+
+
+@cache
+def us_holidays(year: int) -> frozenset[date]:
+    """The US federal holidays that year, observed days included."""
+    return frozenset(holidays.US(years=year))
+
+
+def holidays_off(entries: list[Entry], today: date) -> set[date]:
+    """The US holidays with no work, from the first log's year to this one."""
+    first = min((entry.day.year for entry in entries), default=today.year)
+    days = set().union(*(us_holidays(year) for year in range(first, today.year + 1)))
+    return days - {entry.day for entry in entries}
 
 
 def periods(entries: list[Entry], today: date) -> list[Period]:

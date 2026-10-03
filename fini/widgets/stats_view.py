@@ -19,6 +19,7 @@ from ..stats import (
     levels,
     load_entries,
     time_off_days,
+    holidays_off,
     minutes_by_action,
     minutes_by_day,
     minutes_by_month,
@@ -90,6 +91,7 @@ class StatsView(Vertical):
         database = self.app.database
         self.entries = load_entries(database) if database is not None else []
         self.time_off = time_off_days(database, self.entries) if database is not None else set()
+        self.holidays = holidays_off(self.entries, date.today())
         self.periods = periods(self.entries, date.today())
         self.period = min(self.period, len(self.periods) - 1)
         selector = self.query_one("#stats-period", Select)
@@ -148,7 +150,7 @@ class StatsView(Vertical):
         if self.entries:
             percentages = self.app.config.stats_show == "percentages"
             text = stats_text(
-                self.entries, self.periods[self.period], self.action, self.app.palette, date.today(), percentages, self.time_off
+                self.entries, self.periods[self.period], self.action, self.app.palette, date.today(), percentages, self.time_off, self.holidays
             )
             self.query_one("#stats-text", Static).update(text)
 
@@ -175,15 +177,16 @@ def stats_text(
     today: date,
     percentages: bool = False,
     time_off: set[date] = frozenset(),
+    holidays: set[date] = frozenset(),
 ) -> Text:
     """The figures, the graph, the time per action, then per month; with percentages, no hours anywhere.
-    The days of time off only have their own color in the graph."""
+    The holidays and the days of time off with no work have their own colors in the graph."""
     period_entries = within(entries, period)
     shown = within(entries, period, action)
     colors = action_colors(period_entries, palette)
     parts = [
         figures(period_entries, shown, action, percentages),
-        graphs(shown, period, palette, today, time_off),
+        graphs(shown, period, palette, today, time_off, holidays),
         section("Where the time goes", palette),
         action_bars(period_entries, action, colors, palette, percentages),
         section(month_title(action, percentages), palette),
@@ -219,15 +222,17 @@ def figures(period_entries: list[Entry], shown: list[Entry], action: str | None,
     return Text("   ".join(parts), style="bold")
 
 
-def graphs(shown: list[Entry], period: Period, palette: dict[str, str], today: date, time_off: set[date] = frozenset()) -> Text:
+def graphs(
+    shown: list[Entry], period: Period, palette: dict[str, str], today: date, time_off: set[date] = frozenset(), holidays: set[date] = frozenset()
+) -> Text:
     """One graph, or one per year for all of them, the last year first."""
     days = minutes_by_day(shown)
     thresholds = levels(list(days.values()))
     if period.last.year == period.first.year or period.last - period.first < timedelta(days=366):
-        return graph(days, thresholds, period.first, period.last, palette, today, time_off)
+        return graph(days, thresholds, period.first, period.last, palette, today, time_off, holidays)
     years = range(period.last.year, period.first.year - 1, -1)
     return Text("\n\n").join(
-        Text(str(year), style="bold") + Text("\n") + graph(days, thresholds, max(date(year, 1, 1), period.first), date(year, 12, 31), palette, today, time_off)
+        Text(str(year), style="bold") + Text("\n") + graph(days, thresholds, max(date(year, 1, 1), period.first), date(year, 12, 31), palette, today, time_off, holidays)
         for year in years
     )
 
@@ -240,9 +245,10 @@ def graph(
     palette: dict[str, str],
     today: date,
     time_off: set[date] = frozenset(),
+    holidays: set[date] = frozenset(),
 ) -> Text:
     """A row per weekday and a column per week, as GitHub has it, with the months over the weeks;
-    a day after today is left blank, a day of time off only is blue."""
+    a day after today is left blank, a holiday with no work is red, a day of time off only blue."""
     start = first - timedelta(days=first.weekday())
     weeks = (last - start).days // 7 + 1
     shades = day_shades(palette)
@@ -266,7 +272,9 @@ def graph(
             day = start + timedelta(weeks=week, days=weekday)
             if first <= day <= min(last, today):
                 minutes = days.get(day, 0)
-                if not minutes and day in time_off:
+                if not minutes and day in holidays:
+                    text.append(DAY, style=palette["red"])
+                elif not minutes and day in time_off:
                     text.append(DAY, style=palette["blue"])
                 else:
                     text.append(DAY, style=shades[level(minutes, thresholds)])
@@ -280,7 +288,9 @@ def graph(
     legend.append("More", style=palette["comment"])
     legend.append("   ")
     legend.append(DAY, style=palette["blue"])
-    legend.append(" Time off", style=palette["comment"])
+    legend.append(" Time off   ", style=palette["comment"])
+    legend.append(DAY, style=palette["red"])
+    legend.append(" Holiday", style=palette["comment"])
     text.append("\n")
     text.append(" " * max(label_width + 2 * weeks - 1 - legend.cell_len, 0))
     text.append_text(legend)

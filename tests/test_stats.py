@@ -8,7 +8,7 @@ from tui_kit.theme import load_palette
 from fini.database import open_database
 from fini.logs import create_log
 from fini.message import Inference
-from fini.stats import Entry, Period, level, levels, load_entries, minutes_by_action, minutes_by_month, periods, time_off_days
+from fini.stats import Entry, Period, level, levels, load_entries, minutes_by_action, minutes_by_month, periods, holidays_off, time_off_days
 from fini.widgets.stats_view import CHART_HEIGHT, DAY, BrailleGrid, graph, month_chart
 
 ENTRIES = [
@@ -47,7 +47,7 @@ class StatsTest(unittest.TestCase):
         self.assertEqual([level(minutes, thresholds) for minutes in (0, 30, 120, 200, 600)], [0, 1, 2, 3, 4])
         self.assertEqual(levels([0]), [0, 0, 0])
 
-    def test_a_day_of_time_off_only_is_blue_in_the_graph(self) -> None:
+    def test_a_day_off_is_blue_and_a_us_holiday_red_in_the_graph(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             connection = open_database(Path(tmp) / "fini.sqlite3")
             self.addCleanup(connection.close)
@@ -69,6 +69,19 @@ class StatsTest(unittest.TestCase):
         # Monday, then the legend's square
         self.assertEqual(blue, [DAY, DAY])
         self.assertIn("Time off", text.plain)
+        # Labor Day, Monday, September 7, 2026, then Monday 14, an ordinary day; Labor Day 2025 had work
+        holidays = holidays_off([Entry(date(2025, 9, 1), "code", 60)], date(2026, 10, 1))
+        self.assertIn(date(2026, 9, 7), holidays)
+        self.assertIn(date(2025, 12, 25), holidays)
+        self.assertNotIn(date(2025, 9, 1), holidays)
+        self.assertNotIn(date(2026, 9, 14), holidays)
+        # Red even when logged as time off
+        text = graph({}, [0, 0, 0], date(2026, 9, 7), date(2026, 9, 14), palette, date(2026, 10, 1), {date(2026, 9, 7)}, holidays)
+        red = [text.plain[span.start : span.end] for span in text.spans if span.style == palette["red"]]
+        self.assertEqual(red, [DAY, DAY])
+        # Only the legend's square is blue
+        self.assertEqual([span.style for span in text.spans].count(palette["blue"]), 1)
+        self.assertIn("Holiday", text.plain)
 
     def test_the_actions_are_lines_of_braille_dots_on_one_scale(self) -> None:
         grid = BrailleGrid(2, 1)

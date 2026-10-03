@@ -9,6 +9,7 @@ dependencies = [
     "rich>=14.2.0",
     "pyyaml>=6.0",
     "tui-kit",
+    "holidays>=0.105",
 ]
 
 [tool.uv.sources]

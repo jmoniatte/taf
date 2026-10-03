@@ -274,7 +274,9 @@ focused dropdown does, or the app would open on Stats.
 
 Every log with a duration counts, except `+pto` (`stats.TIME_OFF`). A day with a `+pto` log
 and no other log with a duration (`stats.time_off_days`) is blue in the graph, whatever the
-action picked, with "Time off" in the legend. The logs are read again
+action picked, with "Time off" in the legend. A US federal holiday with no log with a duration
+(`stats.holidays_off`, through the `holidays` package, as in outils) is red, whatever the action
+picked, with "Holiday" in the legend, even with a `+pto` log. The logs are read again
 (`stats.load_entries`, all in memory, about 3,000 rows) each time the tab shows. The graph is about 110 columns wide; a narrower terminal scrolls it sideways.
 
 ## Command line
