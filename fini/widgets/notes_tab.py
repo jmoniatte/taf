@@ -7,7 +7,7 @@ from tui_kit.dialog import ConfirmDialog
 
 from ..editor import EditorError, edit_text, with_front_matter, without_front_matter
 from ..notes import NOTE, TODO, Note, create_note, delete_note, front_matter, get_note, set_done, set_pinned, update_note
-from .note_detail import NoteDetail, TodoDetail, ViewClosed
+from .note_detail import DeleteRequested, NoteDetail, TodoDetail, ViewClosed
 from .notes_table import NoteChangeRequested, NotesTable, TagSelected
 from .notes_view import EditRequested, NewNoteRequested, NoteOpened, NotesView, TodosView
 
@@ -133,11 +133,6 @@ class NotesTab(Vertical):
         event.stop()
         self.edit(event.note)
 
-    def edit_viewed(self) -> None:
-        """Edit the note on show; the footer's Edit button."""
-        if self.viewing is not None:
-            self.edit(self.viewing)
-
     def edit(self, note: Note | None) -> None:
         """Edit the note in $EDITOR, or write a new one, then go back where this started, the list or
         the note; emptied, a note is deleted once confirmed."""
@@ -179,10 +174,10 @@ class NotesTab(Vertical):
         if self.viewing is not None:
             self.show_note(saved)
 
-    def delete_viewed(self) -> None:
-        """Delete the note on show, once confirmed; the footer's Delete button."""
-        if self.viewing is not None:
-            self._confirm_delete(self.viewing)
+    @on(DeleteRequested)
+    def _delete_requested(self, event: DeleteRequested) -> None:
+        event.stop()
+        self._confirm_delete(event.note)
 
     def _confirm_delete(self, note: Note) -> None:
         dialog = ConfirmDialog(

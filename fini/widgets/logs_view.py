@@ -18,6 +18,7 @@ from ..editor import EditorError, edit_written_text
 from ..log_command import parse_markdown, render_markdown
 from ..logs import Log, by_day, create_log, format_duration, logs_between, replace_days
 from ..message import Parsed, parse_message
+from .buttons import flat_button
 from .dashed_rule import DashedRule
 
 HINT = "@30m for the time spent, +action and @context, or the config's rules name them; Enter logs it"
@@ -129,12 +130,12 @@ class LogsView(Vertical):
         with Horizontal(id="logs-controls"):
             yield Static("", classes="logs-side")
             with Horizontal(id="logs-week"):
-                yield week_button("Previous", "btn-previous-week")
+                yield flat_button("Previous", "btn-previous-week", classes="tinted -plain")
                 # As wide as the longest dates, so the buttons never move
                 with Vertical(id="logs-period"):
                     yield Static("", id="logs-dates")
                     yield Static("", id="logs-week-number")
-                yield week_button("Next", "btn-next-week")
+                yield flat_button("Next", "btn-next-week", classes="tinted -plain")
             with Horizontal(classes="logs-side"):
                 yield Button("New Log", id="btn-new-log", classes="tinted")
         yield DashedRule(id="logs-rule")
@@ -286,13 +287,6 @@ class LogsView(Vertical):
 def today() -> date:
     # Apart, so that tests can say which week is this one
     return date.today()
-
-
-def week_button(label: str, id: str) -> Button:
-    button = Button(label, id=id, classes="tinted -plain")
-    # A click must not take focus off the logs, which keep it for the tab's keys
-    button.can_focus = False
-    return button
 
 
 def keep(content: str) -> str:

@@ -482,14 +482,14 @@ class AppTest(unittest.TestCase):
 
         self.run_app(body, logs=STATS_LOGS)
 
-    def test_exit_sits_at_the_right_end_of_the_tabs_row_and_quits(self) -> None:
+    def test_exit_sits_at_the_left_of_the_footer_and_quits(self) -> None:
         async def body(app, pilot) -> None:
             exit_button = app.query_one("#btn-exit")
-            self.assertEqual((exit_button.region.y, exit_button.region.right), (0, app.size.width - 1))
+            refresh = app.query_one("#btn-refresh")
+            self.assertEqual((exit_button.region.y, exit_button.region.x), (app.size.height - 1, 1))
+            self.assertLess(exit_button.region.right, refresh.region.x)
             self.assertEqual(str(exit_button.label), "Exit")
             self.assertTrue(exit_button.has_class("tinted", "-red"))
-            # Close and Edit are only for a todo on show
-            self.assertFalse(app.query_one("#btn-close-note").display or app.query_one("#btn-edit").display)
             await pilot.click("#btn-exit")
             await pilot.pause()
             self.assertFalse(app.is_running)

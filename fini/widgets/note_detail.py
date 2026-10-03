@@ -2,10 +2,12 @@ from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.message import Message
-from textual.widgets import Static
+from textual import on
+from textual.widgets import Button, Static
 from tui_kit.shortcuts import ACTIONS, GENERAL
 
 from ..notes import NOTE, TODO, Note, long_date
+from .buttons import flat_button
 from .note_markdown import NoteMarkdown
 from .notes_table import DONE, OPEN, PINNED, UNPINNED, NoteChangeRequested
 from .notes_view import EditRequested
@@ -13,6 +15,14 @@ from .notes_view import EditRequested
 
 class ViewClosed(Message):
     """The user asked to go back to the list."""
+
+
+class DeleteRequested(Message):
+    """The user asked to delete the note on show."""
+
+    def __init__(self, note: Note) -> None:
+        super().__init__()
+        self.note = note
 
 
 class DoneBox(Static):
@@ -59,7 +69,8 @@ def detail_bindings(kind: str) -> list[Binding]:
 
 class NoteDetail(Vertical):
     """One note rendered as markdown in place of the list, under a line with its id and star, as in
-    the list, and when it was last updated. TodoDetail adds the check box."""
+    the list, when it was last updated, and Close, Edit and Delete on the right. TodoDetail adds the
+    check box."""
 
     KIND = NOTE
     BINDINGS = detail_bindings(NOTE)
@@ -76,6 +87,9 @@ class NoteDetail(Vertical):
                 yield DoneBox("", id="note-detail-done")
             yield PinStar("", id="note-detail-pin")
             yield Static("", id="note-detail-date")
+            yield flat_button("Close", "btn-close-note")
+            yield flat_button("Edit", "btn-edit", classes="tinted")
+            yield flat_button("Delete", "btn-delete", classes="tinted -red")
         with VerticalScroll(id="note-detail-scroll"):
             yield NoteMarkdown(tag_color=self._tag_color, id="note-detail-markdown")
 
@@ -102,6 +116,22 @@ class NoteDetail(Vertical):
         markdown.tag_color = tag_color
         if self.note is not None:
             markdown.update(self.note.content)
+
+    @on(Button.Pressed, "#btn-close-note")
+    def _close_pressed(self, event: Button.Pressed) -> None:
+        event.stop()
+        self.action_close()
+
+    @on(Button.Pressed, "#btn-edit")
+    def _edit_pressed(self, event: Button.Pressed) -> None:
+        event.stop()
+        self.action_edit()
+
+    @on(Button.Pressed, "#btn-delete")
+    def _delete_pressed(self, event: Button.Pressed) -> None:
+        event.stop()
+        if self.note is not None:
+            self.post_message(DeleteRequested(self.note))
 
     def action_close(self) -> None:
         self.post_message(ViewClosed())

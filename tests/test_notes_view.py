@@ -303,11 +303,13 @@ class TodosViewTest(AppCase):
             detail = app.query_one(TodoDetail)
             await pilot.press("enter")
             await pilot.pause()
-            # Close, then the blue Edit, at the left of the footer
-            close_button = app.query_one("#btn-close-note")
-            edit_button = app.query_one("#btn-edit")
+            # Close, then the blue Edit, on the date's line
+            close_button = detail.query_one("#btn-close-note")
+            edit_button = detail.query_one("#btn-edit")
+            date_line = detail.query_one("#note-detail-date")
             self.assertTrue(close_button.display and edit_button.display)
-            self.assertEqual(close_button.region.y, edit_button.region.y)
+            self.assertEqual({close_button.region.y, edit_button.region.y}, {date_line.region.y})
+            self.assertLess(date_line.region.x, close_button.region.x)
             self.assertLess(close_button.region.right, edit_button.region.x)
             self.assertTrue(edit_button.has_class("tinted"))
             todo = list_notes(self.db, TODO, status="open")[0]
@@ -355,28 +357,25 @@ class TodosViewTest(AppCase):
             self.assertEqual(markdown.source, "# Ship it\n\n```\ncode\n```")
             # So does the Edit button
             with patch.dict("os.environ", {"EDITOR": writes("Shipped")}):
-                await pilot.click("#btn-edit")
+                await pilot.click(edit_button)
                 await pilot.pause()
             self.assertEqual(markdown.source, "Shipped")
 
-            # Another tab hides Close and Edit; back, the todo shows with them
-            await pilot.press("tab")
+            # Another tab and back, the todo still shows
+            await pilot.press("tab", "tab", "tab", "tab")
             await pilot.pause()
-            self.assertFalse(close_button.display or edit_button.display)
-            await pilot.press("tab", "tab", "tab")
-            await pilot.pause()
-            self.assertTrue(detail.display and close_button.display and edit_button.display)
+            self.assertTrue(detail.display)
 
-            # Close goes back to the list, as does Escape, and both buttons leave
-            await pilot.click("#btn-close-note")
+            # Close goes back to the list, as does Escape
+            await pilot.click(close_button)
             await pilot.pause()
-            self.assertFalse(detail.display or close_button.display or edit_button.display)
+            self.assertFalse(detail.display)
             await pilot.press("enter")
             await pilot.pause()
             self.assertTrue(detail.display)
             await pilot.press("escape")
             await pilot.pause()
-            self.assertFalse(detail.display or close_button.display)
+            self.assertFalse(detail.display)
             self.assertTrue(app.query_one("#todos-view").query_one(NotesTable).has_focus)
             self.assertEqual(self.summaries(app), ["Shipped"])
 
@@ -387,24 +386,25 @@ class TodosViewTest(AppCase):
             self.assertFalse(detail.display)
             self.assertEqual(self.summaries(app), ["Shipped twice"])
 
-            # The red Delete, after Edit, asks first; Cancel keeps the todo on show
+            # The red Delete, after Edit at the right end of the line, asks first; Cancel keeps the todo on show
             await pilot.press("enter")
             await pilot.pause()
-            delete_button = app.query_one("#btn-delete")
+            delete_button = detail.query_one("#btn-delete")
             self.assertTrue(delete_button.display and delete_button.has_class("tinted", "-red"))
             self.assertLess(edit_button.region.right, delete_button.region.x)
-            await pilot.click("#btn-delete")
+            self.assertEqual(delete_button.region.right, detail.content_region.right)
+            await pilot.click(delete_button)
             await pilot.pause()
             self.assertIsInstance(app.screen, ConfirmDialog)
             await pilot.press("enter")  # Cancel has focus
             await pilot.pause()
             self.assertTrue(detail.display)
             # Confirmed, it is gone and the list is back, without Delete
-            await pilot.click("#btn-delete")
+            await pilot.click(delete_button)
             await pilot.pause()
             await pilot.click("#confirm-btn")
             await pilot.pause()
-            self.assertFalse(detail.display or delete_button.display)
+            self.assertFalse(detail.display)
             self.assertEqual(self.summaries(app), [])
             self.assertEqual(list_notes(self.db, TODO, status="all"), [])
 
@@ -475,8 +475,8 @@ class NotesViewTest(AppCase):
             self.assertFalse(detail.query("#note-detail-done"))
             self.assertEqual(str(detail.query_one("#note-detail-pin", Static).render()).strip(), "☆")
             self.assertEqual(str(detail.query_one("#note-detail-id", Static).render()), "#4")
-            # Delete, from the footer, as for a todo
-            await pilot.click("#btn-delete")
+            # Delete, on the date's line, as for a todo
+            await pilot.click(detail.query_one("#btn-delete"))
             await pilot.pause()
             await pilot.click("#confirm-btn")
             await pilot.pause()

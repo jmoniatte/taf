@@ -85,12 +85,10 @@ its view's `tab_shown` gives focus to its list. `AUTO_FOCUS`
 is None: `TabbedContent` switches to the tab of whatever has focus, so Textual focusing the logs
 list on start would open on Logs.
 
-A red Exit button (tui-kit's `tinted -red`), which quits, sits at the right end of the tabs' row: it is on the
-screen's `overlay` layer, docked right, so it covers the end of that row rather than taking room
-from it.
-
-Under every tab, `#app-footer` is docked at the bottom: a rule (`border-top`) over Help, which
-opens the shortcuts like `?`, on the right (`dock: right`). Neither Help nor Exit can take focus, so a click leaves the view's keys working. tui-kit shows messages in
+Under every tab, `#app-footer` is docked at the bottom: a rule (`border-top`) over a red Exit
+button (tui-kit's `tinted -red`), which quits, on the left, and Help, which opens the shortcuts
+like `?`, on the right (`dock: right`). Neither can take focus (`widgets.buttons.flat_button`), so a
+click leaves the view's keys working. tui-kit shows messages in
 whatever `HeaderNotification` the screen holds, so the footer holds one, `FooterMessage`: while a
 message shows, it takes Help's place, right-aligned (an error wraps onto up to three lines), and
 Help comes back once it clears. Copied from outils.
@@ -152,12 +150,11 @@ place, one todo (`TodoDetail`), as yafyaf-tui's `MainArea` switches between its 
 changed; then its content as markdown (`NoteMarkdown`, a
 copy of yafyaf-tui's `YafMarkdown`: links the terminal can open, tags that filter the list, code
 blocks; its styles map Textual's markdown onto the palette). Escape or `q` goes back to the list,
-`e` or Shift+Enter edits, `y` copies the selection or the todo, `j` and `k` scroll. While a todo
-is on show the footer has Close, back to the list like Escape, then a blue Edit and a red Delete
-(which asks first, Cancel focused), on the left
-(`FiniApp.refresh_footer`, also run when the tab changes, so they hide on Logs). While the list
-is on show, the footer has a green Refresh there instead, which reloads it like `r` (the tab's
-`reload`), for todos written by `fini todo` meanwhile; it shows on Logs too, not on Stats.
+`e` or Shift+Enter edits, `y` copies the selection or the todo, `j` and `k` scroll. At the right
+end of the date's line are Close, back to the list like Escape, then a blue Edit and a red Delete
+(which asks first, Cancel focused). While the list is on show, the footer has a green Refresh after
+Exit, which reloads it like `r` (the tab's `reload`), for todos written by `fini todo` meanwhile;
+it shows on Logs too, not on Stats (`FiniApp.refresh_footer`, also run when the tab changes).
 
 Editing (`NotesTab.edit`) opens the todo in `$EDITOR` (`editor.edit_text`, inside
 `App.suspend`) as markdown under YAML front matter with `id`, `created_at`, `updated_at`, `done_at` (the
@@ -181,8 +178,8 @@ dropdown, no `x` or `f`, no `is:` in the search (typed, it is ignored), no `done
 editor's front matter. Notes are pinned and deleted like todos. A note may have many tags, so
 picking a tag (`NotesView.add_tag`) adds it to the search rather than replacing the one there, and
 Any tag takes them all out; the Tags dropdown shows the search's last tag. `TodosView.add_tag`
-keeps the todos' one tag. Both tabs share the footer's Close, Edit, Delete and Refresh, which act
-on the tab on show (`FiniApp.active_view`). The ids inside the two tabs are the same
+keeps the todos' one tag. Both tabs share the footer's Refresh, which acts on the tab on show
+(`FiniApp.active_view`). The ids inside the two tabs are the same
 (`#notes-list`, `#search`, `#note-detail`...), so a test scopes its queries to the tab
 (`app.query_one("#todos-view")`); `AppCase.TAB` in `tests/test_notes_view.py` is the tab a test
 starts on.

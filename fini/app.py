@@ -18,6 +18,7 @@ from .config import Config, load_config
 from .database import open_database
 from .screens import FiniHelpScreen
 from .widgets import LogsView, NotesTab, StatsView, TodosTab
+from .widgets.buttons import flat_button
 
 STYLES_DIR = Path(__file__).parent / "styles"
 # tui-kit's stylesheets first, so the app's own rules win where they differ
@@ -48,13 +49,6 @@ class FooterMessage(HeaderNotification):
     def _show_help(self, shown: bool) -> None:
         # Unless a new message came in meanwhile
         self.screen.query_one("#btn-help").display = shown and not self.display
-
-
-def footer_button(label: str, id: str, classes: str = "") -> Button:
-    button = Button(label, id=id, classes=classes)
-    # A click must not take focus off the view, which keeps it for its keys
-    button.can_focus = False
-    return button
 
 
 def load_stylesheet() -> str:
@@ -100,17 +94,13 @@ class FiniApp(BaseApp):
             for name, (label, view) in TABS.items():
                 with TabPane(label, id=f"{name}-tab"):
                     yield view(id=f"{name}-view")
-        # Over the right end of the tabs' row, which leaves it room for the tabs
-        yield footer_button("Exit", "btn-exit", classes="tinted -red")
-        # Under every tab: a rule, then Help on the right; a message takes Help's place while it shows.
-        # While a note or a todo is on show, Close, back to the list, Edit and Delete on the left
+        # Under every tab: a rule, then Exit on the left and Help on the right; a message takes Help's
+        # place while it shows
         with Horizontal(id="app-footer"):
-            yield footer_button("Close", "btn-close-note")
-            yield footer_button("Edit", "btn-edit", classes="tinted")
-            yield footer_button("Delete", "btn-delete", classes="tinted -red")
+            yield flat_button("Exit", "btn-exit", classes="tinted -red")
             # Only on a list of notes or todos and on the logs, like the Refresh under yafyaf-tui's list
-            yield footer_button("Refresh", "btn-refresh", classes="tinted -green")
-            yield footer_button("Help", "btn-help")
+            yield flat_button("Refresh", "btn-refresh", classes="tinted -green")
+            yield flat_button("Help", "btn-help")
             yield FooterMessage()
 
     @on(Button.Pressed, "#btn-help")
@@ -132,33 +122,15 @@ class FiniApp(BaseApp):
         """The view of the tab on show."""
         return self.query_one("#tabs", TabbedContent).active_pane.children[0]
 
-    @on(Button.Pressed, "#btn-close-note")
-    def _close_note(self, event: Button.Pressed) -> None:
-        event.stop()
-        self.active_view.show_list()
-
-    @on(Button.Pressed, "#btn-edit")
-    def _edit_note(self, event: Button.Pressed) -> None:
-        event.stop()
-        self.active_view.edit_viewed()
-
-    @on(Button.Pressed, "#btn-delete")
-    def _delete_note(self, event: Button.Pressed) -> None:
-        event.stop()
-        self.active_view.delete_viewed()
-
     @on(Button.Pressed, "#btn-refresh")
     def _refresh(self, event: Button.Pressed) -> None:
         event.stop()
         self.active_view.reload()
 
     def refresh_footer(self) -> None:
-        """Close, Edit and Delete show while a note or a todo is on show, Refresh while their list or
-        the logs are."""
+        """Refresh shows while a list of notes or todos, or the logs, are on show."""
         view = self.active_view
         viewing = getattr(view, "viewing", None) is not None
-        for button in ("#btn-close-note", "#btn-edit", "#btn-delete"):
-            self.query_one(button).display = viewing
         self.query_one("#btn-refresh").display = isinstance(view, LogsView) or (isinstance(view, NotesTab) and not viewing)
 
     def on_mount(self) -> None:
