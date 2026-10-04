@@ -1,4 +1,4 @@
-"""`fini note` and `fini todo`: write a note or a todo from the shell without the TUI; no Textual."""
+"""`travail note` and `travail todo`: write a note or a todo from the shell without the TUI; no Textual."""
 
 import sqlite3
 import sys
@@ -30,7 +30,7 @@ def run(config: Config, message: str, kind: str = NOTE, out: TextIO = sys.stdout
     """Store the message as a new note of the kind; returns the exit code."""
     content = note_content(message)
     if not content:
-        print(f'Nothing to save: fini {kind} "Your {kind} #tag"', file=sys.stderr)
+        print(f'Nothing to save: travail {kind} "Your {kind} #tag"', file=sys.stderr)
         return 2
     for warning in config.warnings:
         print(warning, file=sys.stderr)

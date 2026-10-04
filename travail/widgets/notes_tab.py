@@ -149,7 +149,7 @@ class NotesTab(Vertical):
         try:
             with self.app.suspend():
                 try:
-                    content = without_front_matter(edit_text(text, f"fini-{self.KIND}-"))
+                    content = without_front_matter(edit_text(text, f"travail-{self.KIND}-"))
                 except EditorError as error:
                     # Textual only restores the TUI when the suspend block exits without raising
                     failure = error

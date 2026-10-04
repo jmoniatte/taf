@@ -16,13 +16,13 @@ from tui_kit.shortcuts import GENERAL
 from . import REPOSITORY_URL, __version__
 from .config import Config, load_config
 from .database import open_database
-from .screens import FiniHelpScreen
+from .screens import TravailHelpScreen
 from .widgets import LogsView, NotesTab, StatsView, TodosTab
 from .widgets.buttons import flat_button
 
 STYLES_DIR = Path(__file__).parent / "styles"
 # tui-kit's stylesheets first, so the app's own rules win where they differ
-STYLE_FILES = (*tui_kit.STYLE_FILES, STYLES_DIR / "fini.tcss")
+STYLE_FILES = (*tui_kit.STYLE_FILES, STYLES_DIR / "travail.tcss")
 # Each tab by name, with its label and view; the first one opens first
 TABS = {
     "notes": ("Notes", NotesTab),
@@ -33,7 +33,7 @@ TABS = {
 
 
 class FooterMessage(HeaderNotification):
-    """tui-kit's messages, which find this widget wherever it is: here, in the footer, since fini
+    """tui-kit's messages, which find this widget wherever it is: here, in the footer, since travail
     has no title bar. Help hides while one shows, so the message ends where Help ends, on the right.
     """
 
@@ -55,10 +55,10 @@ def load_stylesheet() -> str:
     return "\n".join(path.read_text() for path in STYLE_FILES)
 
 
-class FiniApp(BaseApp):
+class TravailApp(BaseApp):
     """Todos, notes and a log of the work done, one tab each."""
 
-    TITLE = "Fini"
+    TITLE = "Travail"
     VERSION = __version__
     REPOSITORY_URL = REPOSITORY_URL
     # Nothing takes focus on its own: TabbedContent shows the tab of whatever has focus, so the logs
@@ -110,7 +110,7 @@ class FiniApp(BaseApp):
 
     def action_help(self) -> None:
         """The app's keys on the left, the keys of the tab on show on the right."""
-        self.push_screen(FiniHelpScreen(*self.active_view.help_section()))
+        self.push_screen(TravailHelpScreen(*self.active_view.help_section()))
 
     @on(Button.Pressed, "#btn-exit")
     def _exit(self, event: Button.Pressed) -> None:

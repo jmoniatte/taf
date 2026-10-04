@@ -9,10 +9,10 @@ from tui_kit.theme import TERMINAL_THEME
 
 from .message import Inference
 
-CONFIG_DIR = Path.home() / ".config" / "fini"
+CONFIG_DIR = Path.home() / ".config" / "travail"
 # .yml, not .yaml: the file the Ruby fini used, with its rules for actions and contexts
 CONFIG_FILE = CONFIG_DIR / "config.yml"
-DEFAULT_DATABASE = CONFIG_DIR / "fini.sqlite3"
+DEFAULT_DATABASE = CONFIG_DIR / "travail.sqlite3"
 # What the Stats tab shows: hours, or only percentages, to share without the hours
 STATS_SHOW = ("hours", "percentages")
 
@@ -26,7 +26,7 @@ class Config:
     theme: str = TERMINAL_THEME
     # The SQLite file with the logs, the notes and the todos; ~ is expanded
     database_path: Path = DEFAULT_DATABASE
-    # How `fini log` names the action and the context a message does not give
+    # How `travail log` names the action and the context a message does not give
     action: Inference = field(default_factory=Inference)
     context: Inference = field(default_factory=Inference)
     # Set with the Stats tab's Show dropdown, one of STATS_SHOW

@@ -1,8 +1,8 @@
-# Fini
+# Travail
 
-TUI for todos, notes and a log of the work done ("fini" is French for "done"), all kept in one
-local SQLite database. It replaces the Ruby fini CLI; master keeps the Ruby version until this branch
-replaces it (`git show master:lib/fini/models/log/message_parser.rb` for its message parser).
+TUI for todos, notes and a log of the work done ("travail" is French for "work"), all kept in one
+local SQLite database. It was called fini until 0.6.1 and replaces the Ruby fini CLI
+(`git show 8dd3731^:lib/fini/models/log/message_parser.rb` for its message parser).
 
 It is built on [tui-kit](../tui-kit), shared with outils, flotte and yafyaf-tui: the themes and the
 picker (`t`), the messages, Help (`?`), the dialogs, the startup check and the
@@ -13,8 +13,8 @@ tabs are the first row, and every message goes to the footer.
 ## Rules
 
 - Do not git commit unless asked
-- Help (`FiniHelpScreen`, as in outils) lists the bindings that have a description and a `group`
-  (`tui_kit.shortcuts.ACTIONS` or `GENERAL`): `FiniApp.BINDINGS` on the left, under General, and
+- Help (`TravailHelpScreen`, as in outils) lists the bindings that have a description and a `group`
+  (`tui_kit.shortcuts.ACTIONS` or `GENERAL`): `TravailApp.BINDINGS` on the left, under General, and
   on the right those the tab on show names in its `help_section()` (the Todos or Notes list's, a
   todo's or a note's while one is on show, the Logs' or the Stats'); document a new key there
 - Never hardcode a color in a `.tcss` file
@@ -22,17 +22,17 @@ tabs are the first row, and every message goes to the footer.
 ## Run
 
 ```bash
-fini
-fini log Reviewed PR from Zach @20m     # log a message
-fini log                                # today's logs
-fini log -v 2                           # the last 2 days' logs
-fini log -e 2                           # edit the last 2 days' logs in $EDITOR
-fini todo "Refactor the subscriptions #rails"   # write a todo
-fini note "Wifi password is on the fridge #home" # write a note
+travail
+travail log Reviewed PR from Zach @20m     # log a message
+travail log                                # today's logs
+travail log -v 2                           # the last 2 days' logs
+travail log -e 2                           # edit the last 2 days' logs in $EDITOR
+travail todo "Refactor the subscriptions #rails"   # write a todo
+travail note "Wifi password is on the fridge #home" # write a note
 ```
 
-`fini` refuses to start unless stdin and stdout are a terminal (tui-kit's `start`); `fini log`,
-`fini todo` and `fini note` do not go through that check.
+`travail` refuses to start unless stdin and stdout are a terminal (tui-kit's `start`); `travail log`,
+`travail todo` and `travail note` do not go through that check.
 
 ## Test
 
@@ -44,7 +44,7 @@ uv run ruff check .
 ```
 
 There is no pytest. App tests point `database_path` at a temporary file (`run_app` in
-`tests/test_app.py`); a test that builds `FiniApp` without one opens the user's real database.
+`tests/test_app.py`); a test that builds `TravailApp` without one opens the user's real database.
 `ruff` is pinned in the `dev` dependency group, so use `uv run ruff`.
 tui-kit comes from GitHub's master (`[tool.uv.sources]`); after a push there,
 `uv lock --upgrade-package tui-kit` picks it up. To work on both at once, switch that source to
@@ -53,25 +53,25 @@ the commented-out `../tui-kit` path.
 ## Structure
 
 ```
-fini/                   # git root + pyproject.toml (run uv commands here)
-  fini/                 # Python package
+travail/                   # git root + pyproject.toml (run uv commands here)
+  travail/                 # Python package
     __init__.py         # The version and the repository's URL
-    __main__.py         # The command line: the TUI, or `fini log`'s own parser
-    note_command.py     # `fini note` and `fini todo`: write one in the shell, tags at the end on their own line; no Textual
-    log_command.py      # `fini log`: log, view and edit in the shell, as the Ruby fini did; no Textual
+    __main__.py         # The command line: the TUI, or `travail log`'s own parser
+    note_command.py     # `travail note` and `travail todo`: write one in the shell, tags at the end on their own line; no Textual
+    log_command.py      # `travail log`: log, view and edit in the shell, as the Ruby fini did; no Textual
     message.py          # A message's @duration, @context and +action, and the rules that infer the rest; no Textual
-    app.py              # FiniApp, a tui-kit BaseApp: TABS, the footer and its messages, the keys
-    config.py           # Optional ~/.config/fini/config.yml (theme, through tui_kit.config; database_path)
+    app.py              # TravailApp, a tui-kit BaseApp: TABS, the footer and its messages, the keys
+    config.py           # Optional ~/.config/travail/config.yml (theme, through tui_kit.config; database_path)
     database.py         # Opening the SQLite database and its migrations; no Textual
     editor.py           # edit_text: some text in $EDITOR through a temporary file; no Textual
     notes.py            # Note (a todo is a note of the kind todo), listing and searching, saving, done and pinned, #tags; no Textual
     logs.py             # Log, reading, creating and replacing logs, formatting a duration; no Textual
     stats.py            # The Stats tab's sums: time per day, action and month, periods, shades; no Textual
-    screens/            # FiniHelpScreen: Help with the app's keys and the tab's own, as in outils
+    screens/            # TravailHelpScreen: Help with the app's keys and the tab's own, as in outils
     widgets/            # One view per tab: notes_tab.py, NotesTab and TodosTab (the list, notes_view.py, whose rows are
                         # notes_table.py, or one note, note_detail.py, in note_markdown.py), logs_view.py and stats_view.py;
                         # dashed_rule.py, the rule under the lists' count, copied from yafyaf-tui
-    styles/fini.tcss    # fini's own styles, joined after tui-kit's (app.STYLE_FILES)
+    styles/travail.tcss    # travail's own styles, joined after tui-kit's (app.STYLE_FILES)
 ```
 
 ## Layout
@@ -80,7 +80,7 @@ The `#tabs` `TabbedContent` is the first row, one tab per entry in `TABS` (`app.
 then Todos, then Logs, then Stats; the app opens on Notes. Each pane is `<name>-tab` and holds its view, `<name>-view`. A click
 on a tab or `tab` switches; `tab` is an app binding with `priority`, so the screen's own `tab`
 (focus next) never runs, and it is skipped while a panel or dialog is up. The tabs cannot take
-focus, so a view keeps its keys. `FiniApp.tab` is the name of the tab on show. When a tab shows,
+focus, so a view keeps its keys. `TravailApp.tab` is the name of the tab on show. When a tab shows,
 its view's `tab_shown` gives focus to its list. `AUTO_FOCUS`
 is None: `TabbedContent` switches to the tab of whatever has focus, so Textual focusing the logs
 list on start would open on Logs.
@@ -153,8 +153,8 @@ blocks; its styles map Textual's markdown onto the palette). Escape or `q` goes 
 `e` or Shift+Enter edits, `y` copies the selection or the todo, `j` and `k` scroll. At the right
 end of the date's line are Close, back to the list like Escape, then a blue Edit and a red Delete
 (which asks first, Cancel focused). While the list is on show, the footer has a green Refresh after
-Exit, which reloads it like `r` (the tab's `reload`), for todos written by `fini todo` meanwhile;
-it shows on Logs too, not on Stats (`FiniApp.refresh_footer`, also run when the tab changes).
+Exit, which reloads it like `r` (the tab's `reload`), for todos written by `travail todo` meanwhile;
+it shows on Logs too, not on Stats (`TravailApp.refresh_footer`, also run when the tab changes).
 
 Editing (`NotesTab.edit`) opens the todo in `$EDITOR` (`editor.edit_text`, inside
 `App.suspend`) as markdown under YAML front matter with `id`, `created_at`, `updated_at`, `done_at` (the
@@ -179,7 +179,7 @@ editor's front matter. Notes are pinned and deleted like todos. A note may have 
 picking a tag (`NotesView.add_tag`) adds it to the search rather than replacing the one there, and
 Any tag takes them all out; the Tags dropdown shows the search's last tag. `TodosView.add_tag`
 keeps the todos' one tag. Both tabs share the footer's Refresh, which acts on the tab on show
-(`FiniApp.active_view`). The ids inside the two tabs are the same
+(`TravailApp.active_view`). The ids inside the two tabs are the same
 (`#notes-list`, `#search`, `#note-detail`...), so a test scopes its queries to the tab
 (`app.query_one("#todos-view")`); `AppCase.TAB` in `tests/test_notes_view.py` is the tab a test
 starts on.
@@ -189,8 +189,8 @@ already in the search, or the Todos tab's list would take focus and the app woul
 
 ## Logs
 
-`FiniApp` opens the database when built (`database.open_database`); when it cannot,
-`FiniApp.database` is None, the error shows in the footer and in place of the list
+`TravailApp` opens the database when built (`database.open_database`); when it cannot,
+`TravailApp.database` is None, the error shows in the footer and in place of the list
 (`database_error`). `LogsView` shows a week of logs, Monday to Sunday, this week at first
 (`LogsView.span`, `logs.logs_between`). The two rows over the dashed rule have, in their middle,
 the week's days in blue ("Sep 28 to Oct 4, 2026") over its ISO number in yellow ("Week 40"), in a
@@ -209,7 +209,7 @@ day and the time spent on it all:
 
 The colors are the Ruby ones mapped onto the palette: the day in `red`, durations in `cyan`, the
 text bold, `[+action @context]` in italic `comment`. They are baked into Rich text from
-`BaseApp.palette`, so `FiniApp.apply_theme` repaints the list through `LogsView.set_colors`.
+`BaseApp.palette`, so `TravailApp.apply_theme` repaints the list through `LogsView.set_colors`.
 
 The logs are plain text: one `Static` (`#logs-text`) holding all of them, in `LogsScroll`, a
 `VerticalScroll` that takes focus for `j`, `k`, the arrows, Page Up/Down, Home and End. There is no
@@ -224,7 +224,7 @@ the tab's keys.
 
 At the right end of the dates' row, a blue New Log button (or `n`) opens `NewLogScreen`, a wide
 window (90% of the screen, 140 at most) with a box that logs the message on Enter or Log, as
-`fini log` does (`logs.create_log` with the config's rules), then closes and shows this week
+`travail log` does (`logs.create_log` with the config's rules), then closes and shows this week
 again; Escape or Cancel closes it without logging. Under the box, `#log-preview` shows the message
 as it will be stored, parsed again on every key (`message.parse_message`): "Met Bob @2" shows a
 context `@2` until the `0m` makes it a duration. A database error shows there, in red, and the
@@ -233,7 +233,7 @@ window stays open with the message.
 A click on a day's date (red, underlined under the mouse, an `@click` on `LogsText`) edits that
 day; `e` edits the last day with logs on show, or, with none, today in this week and the Sunday in another. A drag
 that selects text and ends on a date does not edit (`LogsText.action_edit_day` checks for a
-selection). The day opens alone in `$EDITOR` (`LogsView.edit_day`), in `fini log -e`'s markdown
+selection). The day opens alone in `$EDITOR` (`LogsView.edit_day`), in `travail log -e`'s markdown
 (`log_command.render_markdown`, given the day so an empty one still gets its header to write
 under), through `editor.edit_text` inside `App.suspend` as notes
 are edited. Once the file is written (`:w`), even unchanged, the day is replaced (`parse_markdown`,
@@ -242,9 +242,9 @@ writing (`:q`, told apart by the file's mtime, `editor.edit_written_text`) or an
 with an error saves nothing. Another day's header with entries
 under it adds that day too, when it has no logs yet; a day that has logs saves nothing and keeps
 the edit, as its logs were never in the file, and so does a file without the day's own header. Emptying the day under its header deletes its logs without asking, as `-e` does. A date or
-time that does not exist, a broken log line, or a database error (say, locked by `fini log -e`)
+time that does not exist, a broken log line, or a database error (say, locked by `travail log -e`)
 saves nothing and keeps the edit in a file whose path the error gives. `r`, or the footer's
-green Refresh (shown on Logs too), reads the days again, for logs written by `fini log` meanwhile.
+green Refresh (shown on Logs too), reads the days again, for logs written by `travail log` meanwhile.
 
 ## Stats
 
@@ -278,8 +278,8 @@ picked, with "Holiday" in the legend, even with a `+pto` log. The logs are read 
 
 ## Command line
 
-`fini log` is the Ruby fini's command line, with `log` in front: `fini log <message>` logs it,
-`fini log` shows today, `fini log -v N` the last N days (today included), `fini log -e [N]` edits
+`travail log` is the Ruby fini's command line, with `log` in front: `travail log <message>` logs it,
+`travail log` shows today, `travail log -v N` the last N days (today included), `travail log -e [N]` edits
 the last N days (1 by default). It has its own parser (`__main__.log_parser`, through
 `parse_intermixed_args`, so `-v 2` may come after a message's words); argparse's subcommands do
 not allow that. Like the Ruby fini, every command clears the screen first and colors its output
@@ -314,9 +314,9 @@ indented; `ENTRY_LIKE`), which its day would lose, saves nothing and keeps the f
 the error gives. A COMMIT that fails (a locked database) is rolled back, so no transaction stays
 open.
 
-`fini todo <message>` writes a todo, and `fini note <message>` a note (`note_command.run`, their
+`travail todo <message>` writes a todo, and `travail note <message>` a note (`note_command.run`, their
 own parser, `__main__.note_parser`). The `#tags` at the end of the message go on their own line
-after a blank one (`note_command.note_content`): `fini todo "Refactor the subscriptions #rails"` stores
+after a blank one (`note_command.note_content`): `travail todo "Refactor the subscriptions #rails"` stores
 `Refactor the subscriptions\n\n#rails`, so the list shows the text with `#rails` in cyan after it,
 and prints `Todo 12 created: ...` with the new id.
 A tag inside the message stays where it is, and a message of tags only is kept as is. The message
@@ -324,10 +324,10 @@ must be quoted when it has a tag: the shell reads an unquoted `#rails` as a comm
 
 ## Config
 
-`~/.config/fini/config.yml` is optional. It is the file the Ruby fini read. `action` and `context`
+`~/.config/travail/config.yml` is optional. It is the file the Ruby fini read. `action` and `context`
 each hold a `default` and `rules`, a name per list of regular expressions (`config._read_inference`;
 a `null` or invalid pattern is skipped, the latter with a warning). `database_path` is the
-SQLite file (`~` expanded), `~/.config/fini/fini.sqlite3` by default.
+SQLite file (`~` expanded), `~/.config/travail/travail.sqlite3` by default.
 `stats_show` is `hours` (the default) or `percentages`, set from the Stats tab.
 `theme` is `terminal` (the default) or the slug of a scheme in tui-kit; the picker writes it back
 with `tui_kit.config.save_setting`, which changes only that line.

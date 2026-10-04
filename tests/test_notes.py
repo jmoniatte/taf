@@ -3,8 +3,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from fini.database import open_database
-from fini.notes import (
+from travail.database import open_database
+from travail.notes import (
     NOTE,
     TODO,
     create_note,
@@ -22,7 +22,7 @@ from fini.notes import (
     update_note,
     without_tags,
 )
-from fini.widgets.notes_table import ListColors, summary_text
+from travail.widgets.notes_table import ListColors, summary_text
 
 
 class TagsTest(unittest.TestCase):
@@ -36,7 +36,7 @@ class NotesTest(unittest.TestCase):
     def setUp(self) -> None:
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
-        self.db = open_database(Path(tmp.name) / "fini.sqlite3")
+        self.db = open_database(Path(tmp.name) / "travail.sqlite3")
         self.addCleanup(self.db.close)
 
     def test_order_status_and_search(self) -> None:
@@ -131,7 +131,7 @@ class SummaryTextTest(unittest.TestCase):
 class SearchWordsTest(unittest.TestCase):
     def test_a_word_matches_the_text_but_not_the_tags(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            db = open_database(Path(tmp) / "fini.sqlite3")
+            db = open_database(Path(tmp) / "travail.sqlite3")
             tagged = create_note(db, "Fix the docs #api", TODO)
             text = create_note(db, "Document the API", TODO)
             rapid = create_note(db, "Rapid fix", TODO)

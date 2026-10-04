@@ -10,11 +10,11 @@ from unittest.mock import patch
 from textual.widgets import Input, Select, Static
 from tui_kit.dialog import ConfirmDialog
 
-from fini.app import FiniApp
-from fini.config import Config
-from fini.database import open_database
-from fini.notes import NOTE, TODO, create_note, list_notes, long_date, set_done, set_pinned
-from fini.widgets import NoteDetail, NotesTab, NotesTable, TodoDetail, TodosTab
+from travail.app import TravailApp
+from travail.config import Config
+from travail.database import open_database
+from travail.notes import NOTE, TODO, create_note, list_notes, long_date, set_done, set_pinned
+from travail.widgets import NoteDetail, NotesTab, NotesTable, TodoDetail, TodosTab
 
 
 def python_editor(code: str) -> str:
@@ -38,13 +38,13 @@ class AppCase(unittest.TestCase):
 
     def run_app(self, body, todos=(), notes=()) -> None:
         async def main() -> None:
-            with tempfile.TemporaryDirectory() as tmp, patch("fini.app.FiniApp.suspend", suspend):
-                path = Path(tmp) / "fini.sqlite3"
+            with tempfile.TemporaryDirectory() as tmp, patch("travail.app.TravailApp.suspend", suspend):
+                path = Path(tmp) / "travail.sqlite3"
                 self.db = open_database(path)
                 self.made = [create_note(self.db, content, TODO) for content in todos]
                 for content in notes:
                     create_note(self.db, content)
-                app = FiniApp(Config(theme="onedark", database_path=path, path=Path(tmp) / "config.yml"))
+                app = TravailApp(Config(theme="onedark", database_path=path, path=Path(tmp) / "config.yml"))
                 async with app.run_test(size=(110, 24)) as pilot:
                     await pilot.pause()
                     while app.tab != self.TAB:
@@ -186,7 +186,7 @@ class TodosViewTest(AppCase):
             refresh = app.query_one("#btn-refresh")
             self.assertTrue(refresh.display)
             self.assertTrue(refresh.has_class("tinted", "-green"))
-            # Written elsewhere, say by fini todo, it shows once refreshed
+            # Written elsewhere, say by travail todo, it shows once refreshed
             create_note(self.db, "Written from the shell", TODO)
             self.assertEqual(self.summaries(app), ["Old one"])
             await pilot.click("#btn-refresh")
@@ -232,7 +232,7 @@ class TodosViewTest(AppCase):
 
     def test_new_edit_and_delete_go_through_the_editor(self) -> None:
         async def body(app, pilot) -> None:
-            seen = Path(tempfile.gettempdir()) / f"fini-test-seen-{id(self)}"
+            seen = Path(tempfile.gettempdir()) / f"travail-test-seen-{id(self)}"
             self.addCleanup(seen.unlink, missing_ok=True)
             code = f"import sys, shutil; shutil.copy(sys.argv[1], {str(seen)!r}); open(sys.argv[1], 'w').write('Buy milk #home')"
             with patch.dict("os.environ", {"EDITOR": python_editor(code)}):
@@ -345,7 +345,7 @@ class TodosViewTest(AppCase):
             self.assertEqual(str(box.render()).strip(), "\U000f0131")
             self.assertFalse(list_notes(self.db, TODO, status="done"))
             markdown = app.query_one("#todos-view").query_one("#note-detail-markdown")
-            self.assertIn("uv run fini", markdown.source)
+            self.assertIn("uv run travail", markdown.source)
             self.assertTrue(markdown.query("MarkdownFence"))
 
             # e edits, and saving comes back to the todo, its new content shown
@@ -408,7 +408,7 @@ class TodosViewTest(AppCase):
             self.assertEqual(self.summaries(app), [])
             self.assertEqual(list_notes(self.db, TODO, status="all"), [])
 
-        self.run_app(body, todos=("# Release #work\n\n```bash\nuv run fini\n```",))
+        self.run_app(body, todos=("# Release #work\n\n```bash\nuv run travail\n```",))
 
     def test_done_todos_are_gray_and_the_colors_follow_the_theme(self) -> None:
         async def body(app, pilot) -> None:
@@ -458,7 +458,7 @@ class NotesViewTest(AppCase):
             self.assertEqual((search.value, len(rows())), ("", 2))
 
             # A new note is a note, its front matter without done_at; its view has the star, not the box
-            seen = Path(tempfile.gettempdir()) / f"fini-test-seen-{id(self)}"
+            seen = Path(tempfile.gettempdir()) / f"travail-test-seen-{id(self)}"
             self.addCleanup(seen.unlink, missing_ok=True)
             code = f"import sys, shutil; shutil.copy(sys.argv[1], {str(seen)!r}); open(sys.argv[1], 'w').write('Gate code #home')"
             with patch.dict("os.environ", {"EDITOR": python_editor(code)}):

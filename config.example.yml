@@ -1,11 +1,11 @@
-# ~/.config/fini/config.yml (optional)
+# ~/.config/travail/config.yml (optional)
 
 # Color theme: terminal (read from the terminal itself) or any base16 scheme
 # in tui-kit (tui_kit/styles/themes/), by its upstream slug. Press t in the app to
 # browse them; the choice is written back here.
 theme: terminal
 
-database_path: '~/.config/fini/fini.sqlite3'
+database_path: '~/.config/travail/travail.sqlite3'
 
 # What the Stats tab shows: hours, or percentages only, to share it; set from the tab
 stats_show: hours

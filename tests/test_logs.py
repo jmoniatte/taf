@@ -4,8 +4,8 @@ import unittest
 from datetime import date, datetime
 from pathlib import Path
 
-from fini.database import open_database
-from fini.logs import create_log, format_duration, logs_between, replace_days
+from travail.database import open_database
+from travail.logs import create_log, format_duration, logs_between, replace_days
 
 
 class LockedAtCommit:
@@ -31,7 +31,7 @@ class FormatDurationTest(unittest.TestCase):
 class ReplaceDaysTest(unittest.TestCase):
     def test_a_failed_commit_rolls_back_and_leaves_no_transaction_open(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            connection = open_database(Path(tmp) / "fini.sqlite3")
+            connection = open_database(Path(tmp) / "travail.sqlite3")
             self.addCleanup(connection.close)
             create_log(connection, "Kept @1h", logged_at=datetime(2026, 9, 30, 9, 0))
             with self.assertRaisesRegex(sqlite3.OperationalError, "locked"):

@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from fini.database import MIGRATIONS, migrate, open_database, version
+from travail.database import MIGRATIONS, migrate, open_database, version
 
 # The schema a Ruby fini database has, as read from one with sqlite_master
 RUBY_SCHEMA = """
@@ -37,14 +37,14 @@ class DatabaseTest(unittest.TestCase):
         self.dir = Path(tmp.name)
 
     def test_a_new_database_gets_the_same_tables_as_a_ruby_one(self) -> None:
-        connection = open_database(self.dir / "data" / "fini.sqlite3")
+        connection = open_database(self.dir / "data" / "travail.sqlite3")
         self.assertEqual(version(connection), len(MIGRATIONS))
         ruby = sqlite3.connect(":memory:")
         ruby.executescript(RUBY_SCHEMA)
         self.assertEqual(schema(connection), schema(ruby))
         self.assertEqual(len(schema(ruby)["indexes"]), 3)
         # Nothing to back up: there was no data
-        self.assertEqual(sorted(path.name for path in (self.dir / "data").iterdir()), ["fini.sqlite3"])
+        self.assertEqual(sorted(path.name for path in (self.dir / "data").iterdir()), ["travail.sqlite3"])
 
     def test_a_ruby_database_is_marked_migrated_without_running_anything_and_backed_up_once(self) -> None:
         path = self.dir / "logs.sqlite3"

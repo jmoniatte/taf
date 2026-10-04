@@ -1,7 +1,7 @@
 import re
 import unittest
 
-from fini.message import Inference, parse_message
+from travail.message import Inference, parse_message
 
 # The Ruby fini's message_parser_spec.rb: message -> (text, action, context, duration)
 CASES = {

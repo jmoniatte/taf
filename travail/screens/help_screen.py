@@ -15,7 +15,7 @@ def documented(*sources: Iterable[object]) -> tuple[Shortcut, ...]:
     )
 
 
-class FiniHelpScreen(HelpScreen):
+class TravailHelpScreen(HelpScreen):
     """tui-kit's Help as outils has it: the app's keys, which every tab shares, on the left, and the
     tab's own on the right under its name. Both columns keep some width, so a tab with few keys of
     its own still gets a panel of a fair size.

@@ -5,11 +5,11 @@ from pathlib import Path
 
 from tui_kit.theme import load_palette
 
-from fini.database import open_database
-from fini.logs import create_log
-from fini.message import Inference
-from fini.stats import Entry, Period, level, levels, load_entries, minutes_by_action, minutes_by_month, periods, holidays_off, time_off_days
-from fini.widgets.stats_view import CHART_HEIGHT, DAY, BrailleGrid, graph, month_chart
+from travail.database import open_database
+from travail.logs import create_log
+from travail.message import Inference
+from travail.stats import Entry, Period, level, levels, load_entries, minutes_by_action, minutes_by_month, periods, holidays_off, time_off_days
+from travail.widgets.stats_view import CHART_HEIGHT, DAY, BrailleGrid, graph, month_chart
 
 ENTRIES = [
     Entry(date(2024, 12, 23), "code", 60),
@@ -49,7 +49,7 @@ class StatsTest(unittest.TestCase):
 
     def test_a_day_off_is_blue_and_a_us_holiday_red_in_the_graph(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            connection = open_database(Path(tmp) / "fini.sqlite3")
+            connection = open_database(Path(tmp) / "travail.sqlite3")
             self.addCleanup(connection.close)
             pto = Inference("code", [("pto", [])])
             # Monday: time off only, even without a duration; Tuesday: time off and work

@@ -3,8 +3,8 @@ import io
 import unittest
 from unittest.mock import patch
 
-from fini.__main__ import main
-from fini.app import FiniApp
+from travail.__main__ import main
+from travail.app import TravailApp
 
 
 class MainTest(unittest.TestCase):
@@ -13,17 +13,17 @@ class MainTest(unittest.TestCase):
         with contextlib.redirect_stdout(output), self.assertRaises(SystemExit) as raised:
             main(["--version"])
         self.assertEqual(raised.exception.code, 0)
-        self.assertTrue(output.getvalue().startswith("fini "))
+        self.assertTrue(output.getvalue().startswith("travail "))
 
-        with patch("fini.__main__.start") as start:
+        with patch("travail.__main__.start") as start:
             main([])
-        start.assert_called_once_with("fini", FiniApp)
+        start.assert_called_once_with("travail", TravailApp)
 
     def test_log_runs_without_the_tui_and_takes_options_after_the_message(self) -> None:
         with (
-            patch("fini.__main__.start") as start,
-            patch("fini.__main__.load_config") as config,
-            patch("fini.__main__.log_command.run", return_value=0) as run,
+            patch("travail.__main__.start") as start,
+            patch("travail.__main__.load_config") as config,
+            patch("travail.__main__.log_command.run", return_value=0) as run,
         ):
             for argv in (["log", "Did", "a", "thing", "@1h"], ["log", "-v", "2"], ["log", "-e"], ["log", "-e", "3"], ["log"], ["log", "x", "-v", "2"]):
                 with self.assertRaises(SystemExit) as raised:
