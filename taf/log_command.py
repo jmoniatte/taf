@@ -1,4 +1,4 @@
-"""`travail log`: the Ruby fini's command line, in the shell without the TUI; no Textual."""
+"""`taf log`: the Ruby fini's command line, in the shell without the TUI; no Textual."""
 
 import os
 import re
@@ -80,7 +80,7 @@ def edit_days(
     """Open the days in $EDITOR as markdown, then replace the logs of every day left in the file
     with the file's entries."""
     content = render_markdown(logs_between(connection, first, last))
-    with tempfile.NamedTemporaryFile("w", prefix="travail-edit-", suffix=".md", delete=False) as file:
+    with tempfile.NamedTemporaryFile("w", prefix="taf-edit-", suffix=".md", delete=False) as file:
         file.write(content)
     path = Path(file.name)
     editor = os.environ.get("EDITOR") or "vim"

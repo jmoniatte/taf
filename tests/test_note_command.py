@@ -5,11 +5,11 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from travail.__main__ import main
-from travail.config import Config
-from travail.database import open_database
-from travail.note_command import note_content, run
-from travail.notes import NOTE, TODO, list_notes
+from taf.__main__ import main
+from taf.config import Config
+from taf.database import open_database
+from taf.note_command import note_content, run
+from taf.notes import NOTE, TODO, list_notes
 
 
 class NoteContentTest(unittest.TestCase):
@@ -26,7 +26,7 @@ class NoteContentTest(unittest.TestCase):
 class NoteCommandTest(unittest.TestCase):
     def test_writes_the_todo_or_note_and_says_so(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            config = Config(database_path=Path(tmp) / "travail.sqlite3")
+            config = Config(database_path=Path(tmp) / "taf.sqlite3")
             out = io.StringIO()
             self.assertEqual(run(config, "Refactor the subscription model #rails", TODO, out=out), 0)
             self.assertEqual(out.getvalue(), "Todo 1 created: Refactor the subscription model (#rails)\n")
@@ -46,9 +46,9 @@ class NoteCommandTest(unittest.TestCase):
 
     def test_main_runs_it_without_the_tui(self) -> None:
         with (
-            patch("travail.__main__.start") as start,
-            patch("travail.__main__.load_config") as config,
-            patch("travail.__main__.note_command.run", return_value=0) as command,
+            patch("taf.__main__.start") as start,
+            patch("taf.__main__.load_config") as config,
+            patch("taf.__main__.note_command.run", return_value=0) as command,
         ):
             for kind in ("todo", "note"):
                 with self.assertRaises(SystemExit) as raised:

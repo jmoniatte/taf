@@ -2,17 +2,17 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from travail.config import DEFAULT_DATABASE, Config, load_config
+from taf.config import DEFAULT_DATABASE, Config, load_config
 
 
 class LoadConfigTest(unittest.TestCase):
     def test_reads_the_theme_and_ignores_the_ruby_keys(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "config.yml"
-            path.write_text("theme: one-light\ndatabase_path: '~/travail.sqlite3'\nstats_show: percentages\naction:\n  default: code\n")
+            path.write_text("theme: one-light\ndatabase_path: '~/taf.sqlite3'\nstats_show: percentages\naction:\n  default: code\n")
             config = load_config(path)
         self.assertEqual((config.theme, config.stats_show, config.path, config.warnings), ("one-light", "percentages", path, []))
-        self.assertEqual(config.database_path, Path.home() / "travail.sqlite3")
+        self.assertEqual(config.database_path, Path.home() / "taf.sqlite3")
         self.assertEqual(load_config(Path("/nonexistent/config.yml")), Config())
         self.assertEqual((Config().theme, Config().database_path), ("terminal", DEFAULT_DATABASE))
 

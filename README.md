@@ -1,35 +1,35 @@
-# Travail
+# Taf
 
 Todos, notes and a log of the work done, in the terminal. All live in one local SQLite database.
-It was called fini until version 0.6.1.
+It was called fini until version 0.6.1, then travail until 0.7.0.
 
 ## Installation
 
 ```bash
-git clone git@github.com:jmoniatte/travail.git
-cd travail
+git clone git@github.com:jmoniatte/taf.git
+cd taf
 ./install.sh
 ```
 
-Coming from fini: run `uv tool uninstall fini`, then move `~/.config/fini` to `~/.config/travail`.
-If you had no `database_path` in the config, also rename `fini.sqlite3` there to `travail.sqlite3`.
+Coming from travail: run `uv tool uninstall travail`, then move `~/.config/travail` to `~/.config/taf`.
+If you had no `database_path` in the config, also rename `travail.sqlite3` there to `taf.sqlite3`.
 
 ## Usage
 
 ```bash
-travail
-travail --version
-travail log Reviewed PR from Zach @20m     # log a message
-travail log                                # today's logs
-travail log -v 2                           # the last 2 days' logs
-travail log -e 2                           # edit the last 2 days' logs in $EDITOR
-travail todo "Refactor the subscriptions #rails"   # write a todo
-travail note "Wifi password is on the fridge #home" # write a note
+taf
+taf --version
+taf log Reviewed PR from Zach @20m     # log a message
+taf log                                # today's logs
+taf log -v 2                           # the last 2 days' logs
+taf log -e 2                           # edit the last 2 days' logs in $EDITOR
+taf todo "Refactor the subscriptions #rails"   # write a todo
+taf note "Wifi password is on the fridge #home" # write a note
 ```
 
 A message takes `@30m`, `@1h` or `@1h45` for the time spent, `@context` and `+action`; an action
-or context it does not give comes from the rules in `~/.config/travail/config.yml`
-(`config.example.yml` shows them). `travail log --help` lists it all.
+or context it does not give comes from the rules in `~/.config/taf/config.yml`
+(`config.example.yml` shows them). `taf log --help` lists it all.
 
 `tab` switches between the Notes, Todos, Logs and Stats tabs. `?` lists every shortcut, `t` changes
 the theme and `q` quits.
@@ -47,11 +47,11 @@ the theme and `q` quits.
 
 ## Configuration
 
-Nothing is required. `~/.config/travail/config.yml` can hold:
+Nothing is required. `~/.config/taf/config.yml` can hold:
 
 ```yaml
 theme: one-light                 # written by `t`
-database_path: '~/logs.sqlite3'  # ~/.config/travail/travail.sqlite3 by default
+database_path: '~/logs.sqlite3'  # ~/.config/taf/taf.sqlite3 by default
 stats_show: percentages          # or hours, set from the Stats tab
 ```
 
@@ -60,7 +60,7 @@ stats_show: percentages          # or hours, set from the Stats tab
 ## Development
 
 ```bash
-uv run travail
+uv run taf
 uv run python -m unittest discover -s tests
 uv run ruff check .
 ```

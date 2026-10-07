@@ -5,21 +5,21 @@ from collections.abc import Sequence
 from tui_kit.start import start
 
 from . import __version__, log_command, note_command
-from .app import TravailApp
+from .app import TafApp
 from .config import load_config
 
 LOG_EPILOG = """examples:
-  travail log                              show today's logs
-  travail log -v 7                         show the last 7 days' logs
-  travail log -e                           edit today's logs
-  travail log -e 3                         edit the last 3 days' logs
-  travail log your message @2h @context    log a message with a duration and a context
+  taf log                              show today's logs
+  taf log -v 7                         show the last 7 days' logs
+  taf log -e                           edit today's logs
+  taf log -e 3                         edit the last 3 days' logs
+  taf log your message @2h @context    log a message with a duration and a context
 
 message format:
   @<duration>   duration (examples: @30m, @1h, @1.5h, @1h45)
   @<context>    context (examples: @backend, @front-end)
   +<action>     action (examples: +meeting, +code)
-  an action or context not given comes from the rules in ~/.config/travail/config.yml
+  an action or context not given comes from the rules in ~/.config/taf/config.yml
 """
 
 
@@ -32,7 +32,7 @@ def days(value: str) -> int:
 
 def log_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="travail log",
+        prog="taf log",
         description="Log a message, or show or edit the logs of the last days, without the TUI.",
         epilog=LOG_EPILOG,
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -47,12 +47,12 @@ def log_parser() -> argparse.ArgumentParser:
 
 
 def note_parser(kind: str) -> argparse.ArgumentParser:
-    """travail note's parser, or travail todo's."""
+    """taf note's parser, or taf todo's."""
     example = "Refactor the subscription model #rails" if kind == "todo" else "The staging password is in 1Password #work"
     parser = argparse.ArgumentParser(
-        prog=f"travail {kind}",
+        prog=f"taf {kind}",
         description=f"Write a {kind} without the TUI. #tags at the end go on their own line, after a blank one.",
-        epilog=f'example:\n  travail {kind} "{example}"\n\nQuote it: the shell reads an unquoted #tag as a comment.',
+        epilog=f'example:\n  taf {kind} "{example}"\n\nQuote it: the shell reads an unquoted #tag as a comment.',
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument("message", nargs="+", help=f"the {kind}")
@@ -73,13 +73,13 @@ def main(argv: Sequence[str] | None = None) -> None:
     parser = argparse.ArgumentParser(
         description="Todos, notes and a log of the work done, in the terminal.",
         epilog=(
-            "travail log: log a message, or show or edit the logs, without the TUI (travail log --help); "
-            "travail todo: write a todo (travail todo --help); travail note: write a note (travail note --help)"
+            "taf log: log a message, or show or edit the logs, without the TUI (taf log --help); "
+            "taf todo: write a todo (taf todo --help); taf note: write a note (taf note --help)"
         ),
     )
-    parser.add_argument("--version", action="version", version=f"travail {__version__}")
+    parser.add_argument("--version", action="version", version=f"taf {__version__}")
     parser.parse_args(argv)
-    start("travail", TravailApp)
+    start("taf", TafApp)
 
 
 if __name__ == "__main__":

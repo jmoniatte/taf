@@ -1,5 +1,5 @@
 [project]
-name = "travail"
+name = "taf"
 dynamic = ["version"]
 description = "TUI for todos and a log of the work done"
 readme = "README.md"
@@ -19,7 +19,7 @@ dependencies = [
 tui-kit = { git = "ssh://git@github.com/jmoniatte/tui-kit.git", branch = "master" }
 
 [project.scripts]
-travail = "travail.__main__:main"
+taf = "taf.__main__:main"
 
 [dependency-groups]
 # 0.16 turns on a much larger default rule set; adopt it deliberately, not by drift
@@ -31,9 +31,9 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["travail*"]
+include = ["taf*"]
 
 [tool.setuptools.package-data]
-travail = ["styles/*.tcss"]
+taf = ["styles/*.tcss"]
 
 [tool.setuptools_scm]

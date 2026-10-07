@@ -34,7 +34,7 @@ class LogsScroll(VerticalScroll):
 
 
 class NewLogScreen(ModalScreen[str | None]):
-    """A wide window to log a message, as `travail log` does, with the message as it will be stored
+    """A wide window to log a message, as `taf log` does, with the message as it will be stored
     under the box, read again on every key. Returns the message logged, or None."""
 
     BINDINGS = [Binding("escape", "cancel", "Cancel")]
@@ -236,7 +236,7 @@ class LogsView(Vertical):
         self.edit_day(event.day)
 
     def edit_day(self, day: date) -> None:
-        """Edit the day in $EDITOR as `travail log -e` does, then replace its logs with the file's, read
+        """Edit the day in $EDITOR as `taf log -e` does, then replace its logs with the file's, read
         again with the current rules once the file is written, even unchanged; quitting without
         writing saves nothing."""
         database = self.app.database
@@ -249,7 +249,7 @@ class LogsView(Vertical):
         try:
             with self.app.suspend():
                 try:
-                    content = edit_written_text(original, "travail-edit-")
+                    content = edit_written_text(original, "taf-edit-")
                 except EditorError as error:
                     # Textual only restores the TUI when the suspend block exits without raising
                     failure = error
@@ -291,7 +291,7 @@ def today() -> date:
 
 def keep(content: str) -> str:
     """Save content to a file that stays, and return its path."""
-    fd, path = tempfile.mkstemp(prefix="travail-edit-", suffix=".md")
+    fd, path = tempfile.mkstemp(prefix="taf-edit-", suffix=".md")
     with os.fdopen(fd, "w", encoding="utf-8") as file:
         file.write(content)
     return path

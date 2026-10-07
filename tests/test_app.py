@@ -11,15 +11,15 @@ from textual.widgets import Input, Select, Static, TabbedContent
 from tui_kit.help_screen import HelpScreen
 from tui_kit.theme import list_themes, load_palette
 
-from travail.app import TABS, TravailApp, FooterMessage, load_stylesheet
-from travail.config import Config
-from travail.database import open_database
-from travail.logs import create_log
-from travail.message import Inference
-from travail.notes import TODO, create_note
-from travail.widgets.stats_view import ALL_ACTIONS
-from travail.widgets import LogsScroll, LogsView, NotesTab, NotesTable, StatsScroll, StatsView, TodosTab
-from travail.widgets.logs_view import HINT, NewLogScreen
+from taf.app import TABS, TafApp, FooterMessage, load_stylesheet
+from taf.config import Config
+from taf.database import open_database
+from taf.logs import create_log
+from taf.message import Inference
+from taf.notes import TODO, create_note
+from taf.widgets.stats_view import ALL_ACTIONS
+from taf.widgets import LogsScroll, LogsView, NotesTab, NotesTable, StatsScroll, StatsView, TodosTab
+from taf.widgets.logs_view import HINT, NewLogScreen
 from test_notes_view import python_editor, suspend, writes
 
 # The Logs tab shows the last 7 days, so the logs are dated from today
@@ -53,7 +53,7 @@ class AppTest(unittest.TestCase):
         async def main() -> None:
             with tempfile.TemporaryDirectory() as tmp:
                 # Never the user's database
-                config.database_path = Path(tmp) / "travail.sqlite3"
+                config.database_path = Path(tmp) / "taf.sqlite3"
                 config.path = Path(tmp) / "config.yml"
                 with open_database(config.database_path) as database:
                     database.executemany(
@@ -61,9 +61,9 @@ class AppTest(unittest.TestCase):
                         [(*log, log[1]) for log in logs],
                     )
                 database.close()
-                app = TravailApp(config)
+                app = TafApp(config)
                 # The fixed logs' week is this one; without them, logs are written now
-                with patch("travail.widgets.logs_view.today", return_value=TODAY if logs is LOGS else REAL_TODAY):
+                with patch("taf.widgets.logs_view.today", return_value=TODAY if logs is LOGS else REAL_TODAY):
                     async with app.run_test(size=(80, 24)) as pilot:
                         await pilot.pause()
                         await body(app, pilot)
@@ -166,7 +166,7 @@ class AppTest(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmp:
             # A folder where the file should be
-            app = TravailApp(Config(theme="onedark", database_path=Path(tmp)))
+            app = TafApp(Config(theme="onedark", database_path=Path(tmp)))
 
             async def main() -> None:
                 async with app.run_test(size=(80, 24)) as pilot:
@@ -321,7 +321,7 @@ class AppTest(unittest.TestCase):
             self.assertIn("Lost", kept.read_text())
             kept.unlink()
             self.assertNotIn("Lost", stored())
-            # Logged elsewhere, by travail log, it shows once refreshed
+            # Logged elsewhere, by taf log, it shows once refreshed
             await pilot.press("right_square_bracket", "right_square_bracket")
             create_log(app.database, "From the shell @5m")
             refresh = app.query_one("#btn-refresh")
@@ -330,7 +330,7 @@ class AppTest(unittest.TestCase):
             await pilot.pause()
             self.assertIn("From the shell 5m", str(app.query_one("#logs-text", Static).render()))
 
-        with patch("travail.app.TravailApp.suspend", suspend):
+        with patch("taf.app.TafApp.suspend", suspend):
             self.run_app(body, logs=LOGS)
 
     def test_a_written_day_is_read_again_with_the_current_rules_even_unchanged(self) -> None:
@@ -354,7 +354,7 @@ class AppTest(unittest.TestCase):
                 await pilot.pause()
             self.assertEqual(actions(), ["talk", "talk"])
 
-        with patch("travail.app.TravailApp.suspend", suspend):
+        with patch("taf.app.TafApp.suspend", suspend):
             self.run_app(body, config=Config(theme="onedark", action=Inference("talk")), logs=LOGS)
 
     def test_a_database_error_on_logging_or_saving_keeps_the_work(self) -> None:
@@ -362,7 +362,7 @@ class AppTest(unittest.TestCase):
             await pilot.press("tab", "tab")
             await pilot.pause()
             locked = sqlite3.OperationalError("database is locked")
-            with patch("travail.widgets.logs_view.create_log", side_effect=locked):
+            with patch("taf.widgets.logs_view.create_log", side_effect=locked):
                 await pilot.press("n", *"Coded @1h", "enter")
                 await pilot.pause()
             # The window stays open with the message, and says why
@@ -371,7 +371,7 @@ class AppTest(unittest.TestCase):
             self.assertEqual(app.screen.query_one("#log-input", Input).value, "Coded @1h")
             await pilot.press("escape")
             await pilot.pause()
-            with patch("travail.widgets.logs_view.replace_days", side_effect=locked), patch.dict("os.environ", {"EDITOR": writes(f"# {TODAY}\n* 08:00 - Kept\n")}):
+            with patch("taf.widgets.logs_view.replace_days", side_effect=locked), patch.dict("os.environ", {"EDITOR": writes(f"# {TODAY}\n* 08:00 - Kept\n")}):
                 await pilot.press("e")
                 await pilot.pause()
             message = app.query_one(FooterMessage).render().plain
@@ -381,7 +381,7 @@ class AppTest(unittest.TestCase):
             kept.unlink()
             self.assertTrue(app.is_running)
 
-        with patch("travail.app.TravailApp.suspend", suspend):
+        with patch("taf.app.TafApp.suspend", suspend):
             self.run_app(body, logs=LOGS)
 
     def test_help_shows_the_apps_keys_and_the_tabs_own(self) -> None:

@@ -9,11 +9,11 @@ from datetime import date, datetime
 from pathlib import Path
 from unittest.mock import patch
 
-from travail.config import Config
-from travail.database import open_database
-from travail.log_command import parse_markdown, render_markdown, render_terminal, run
-from travail.logs import Log, create_log, logs_between
-from travail.message import Inference
+from taf.config import Config
+from taf.database import open_database
+from taf.log_command import parse_markdown, render_markdown, render_terminal, run
+from taf.logs import Log, create_log, logs_between
+from taf.message import Inference
 
 TODAY = date(2026, 9, 30)
 RULES = {
@@ -36,7 +36,7 @@ class LogCommandTest(unittest.TestCase):
     def setUp(self) -> None:
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
-        self.config = Config(database_path=Path(tmp.name) / "travail.sqlite3", **RULES)
+        self.config = Config(database_path=Path(tmp.name) / "taf.sqlite3", **RULES)
         self.tmp = Path(tmp.name)
 
     def run_command(self, out=None, **kwargs) -> str:
