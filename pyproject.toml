@@ -34,6 +34,6 @@ where = ["."]
 include = ["taf*"]
 
 [tool.setuptools.package-data]
-taf = ["styles/*.tcss"]
+taf = ["styles/*.tcss", "veille/prompts/*.md"]
 
 [tool.setuptools_scm]

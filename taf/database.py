@@ -39,6 +39,68 @@ MIGRATIONS = (
     ALTER TABLE notes ADD COLUMN kind TEXT NOT NULL DEFAULT 'note';
     UPDATE notes SET kind = 'todo';
     """,
+    # 4: veille's tables: projects (pieces of work, not repos) with the Slack channels and git branches
+    # linked to them, the items from Slack, the user's PRs, the collectors' cursors and runs
+    """
+    CREATE TABLE veille_projects (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL UNIQUE,
+        about TEXT NOT NULL DEFAULT '',
+        status TEXT NOT NULL DEFAULT 'active',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    );
+    CREATE TABLE veille_project_links (
+        project_id INTEGER NOT NULL REFERENCES veille_projects (id),
+        kind TEXT NOT NULL,
+        value TEXT NOT NULL,
+        PRIMARY KEY (kind, value)
+    );
+    CREATE TABLE veille_items (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        source TEXT NOT NULL,
+        key TEXT NOT NULL,
+        project_id INTEGER REFERENCES veille_projects (id),
+        kind TEXT NOT NULL,
+        summary TEXT NOT NULL,
+        details TEXT NOT NULL DEFAULT '',
+        people TEXT NOT NULL DEFAULT '',
+        url TEXT,
+        due TEXT,
+        happened_at TEXT,
+        pinned INTEGER NOT NULL DEFAULT 0,
+        done_at TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        UNIQUE (source, key)
+    );
+    CREATE INDEX veille_items_project_done ON veille_items (project_id, done_at);
+    CREATE TABLE veille_prs (
+        url TEXT PRIMARY KEY,
+        repo TEXT NOT NULL,
+        number INTEGER NOT NULL,
+        title TEXT NOT NULL,
+        branch TEXT NOT NULL,
+        state TEXT NOT NULL,
+        project_id INTEGER REFERENCES veille_projects (id),
+        updated_at TEXT NOT NULL
+    );
+    CREATE TABLE veille_cursors (
+        source TEXT PRIMARY KEY,
+        value TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    );
+    CREATE TABLE veille_runs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        source TEXT NOT NULL,
+        started_at TEXT NOT NULL,
+        finished_at TEXT NOT NULL,
+        cost_usd REAL,
+        pages INTEGER,
+        items INTEGER NOT NULL DEFAULT 0,
+        error TEXT
+    );
+    """,
 )
 # The last migration a Ruby fini database already has
 RUBY_VERSION = 1
@@ -50,6 +112,9 @@ def open_database(path: Path) -> sqlite3.Connection:
     path.parent.mkdir(parents=True, exist_ok=True)
     connection = sqlite3.connect(path, isolation_level=None)
     connection.row_factory = sqlite3.Row
+    # The veille timer writes while the app or an agent hook reads
+    connection.execute("PRAGMA busy_timeout = 5000")
+    connection.execute("PRAGMA foreign_keys = ON")
     migrate(connection, path if existed else None)
     return connection
 
