@@ -3,7 +3,7 @@ import re
 import sqlite3
 import tempfile
 import unittest
-from datetime import date, timedelta
+from datetime import date, datetime, time, timedelta
 from pathlib import Path
 from unittest.mock import patch
 
@@ -323,7 +323,7 @@ class AppTest(unittest.TestCase):
             self.assertNotIn("Lost", stored())
             # Logged elsewhere, by taf log, it shows once refreshed
             await pilot.press("right_square_bracket", "right_square_bracket")
-            create_log(app.database, "From the shell @5m")
+            create_log(app.database, "From the shell @5m", logged_at=datetime.combine(TODAY, time(16, 0)))
             refresh = app.query_one("#btn-refresh")
             self.assertTrue(refresh.display)
             await pilot.click("#btn-refresh")
