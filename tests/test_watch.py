@@ -8,13 +8,13 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from taf.veille import cli
-from taf.veille import github, slack
-from taf.veille.claude import ClaudeResult, parse_result
-from taf.veille import projects
-from taf.veille.config import Config, GithubConfig, load_config
+from taf.watch import cli
+from taf.watch import github, slack
+from taf.watch.claude import ClaudeResult, parse_result
+from taf.watch import projects
+from taf.watch.config import Config, GithubConfig, load_config
 from taf.database import open_database
-from taf.veille.items import Item, get_cursor, get_item, list_items, recent_runs, save_item, set_done
+from taf.watch.items import Item, get_cursor, get_item, list_items, recent_runs, save_item, set_done
 
 
 class Case(unittest.TestCase):
@@ -28,12 +28,17 @@ class Case(unittest.TestCase):
 
 class ConfigTest(Case):
     def test_load(self):
-        path = self.tmp / "config.toml"
-        path.write_text('model = "haiku"\n[slack]\nskip_channels = ["#dev-notify"]\n')
+        path = self.tmp / "config.yml"
+        path.write_text("database_path: '~/x.sqlite3'\nwatch:\n  model: haiku\n  slack:\n    skip_channels: ['#dev-notify']\n")
         config = load_config(path)
-        self.assertEqual(config.model, "haiku")
+        self.assertEqual((config.model, config.max_budget_usd), ("haiku", 1.0))
         self.assertEqual(config.slack.skip_channels, ["dev-notify"])
-        self.assertEqual(load_config(self.tmp / "missing.toml"), Config())
+        # The database is taf's
+        self.assertEqual(config.database_path, Path("~/x.sqlite3").expanduser())
+        self.assertEqual(load_config(self.tmp / "missing.yml"), Config())
+        path.write_text("watch:\n  slack: nope\n")
+        with self.assertRaises(ValueError):
+            load_config(path)
 
 
 class ProjectsTest(Case):
@@ -259,8 +264,8 @@ class SlackTest(Case):
             cli.notify("Slack", [], [], "claude timed out", 1200)
         sent = [c.args[0] for c in run.call_args_list]
         self.assertEqual(len(sent), 2)
-        self.assertEqual(sent[0][-2:], ["veille: Slack 2 found, 1 closed (3m 12s)", "+ Answer &lt;Kevin&gt;\n+ Deploy\n✓ Fix test"])
-        self.assertEqual(sent[1][-2:], ["veille: Slack run failed (20m 0s)", "claude timed out"])
+        self.assertEqual(sent[0][-2:], ["taf watch: Slack 2 found, 1 closed (3m 12s)", "+ Answer &lt;Kevin&gt;\n+ Deploy\n✓ Fix test"])
+        self.assertEqual(sent[1][-2:], ["taf watch: Slack run failed (20m 0s)", "claude timed out"])
         self.assertIn("--urgency=critical", sent[1])
 
     def test_prompt(self):
@@ -320,7 +325,11 @@ class CliTest(Case):
         self.assertEqual(list_items(self.db)[0]["project"], None)
         self.assertEqual(self.run_cli("project", "assign", "rwgps", "1")[0], 0)
         self.assertIn("rwgps  1 open  Rails app\n  branch main", self.run_cli("project")[1])
-        self.assertEqual(self.run_cli("status")[1], "rwgps (1)\n  #1 action Review PR\n")
+        # Alone: every open item by project
+        self.assertEqual(self.run_cli()[1], "rwgps (1)\n  #1 action Review PR\n")
+        self.assertEqual(self.run_cli("pin", "1", "9"), (1, ""))
+        self.assertEqual(get_item(self.db, 1)["pinned"], 1)
+        self.assertEqual(self.run_cli("unpin", "1"), (0, ""))
 
         with mock.patch.object(cli, "current_branch", return_value="main"):
             self.assertEqual(self.run_cli("add", "Fix the N+1 in feeds", "--details", "seen in logs"),
@@ -336,10 +345,10 @@ class CliTest(Case):
 
 
 class ImportTest(unittest.TestCase):
-    def test_the_collector_never_loads_the_tui(self):
+    def test_the_commands_never_load_the_tui(self):
         # A fresh interpreter: this one may already have loaded Textual for other tests
         code = (
-            "import sys, taf.veille.cli; "
+            "import sys, taf.__main__, taf.watch.cli, taf.todo_command; "
             "print(sorted(m for m in ('textual', 'rich') if m in sys.modules))"
         )
         result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=True)

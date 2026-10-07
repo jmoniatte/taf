@@ -1,7 +1,7 @@
 # Taf
 
-TUI for todos, notes and a log of the work done ("taf" is French slang for "work"), all kept in one
-local SQLite database. It was called fini until 0.6.1, then travail until 0.7.0, and replaces the Ruby fini CLI
+TUI for todos, notes, a log of the work done, and what needs the user from Slack and GitHub (the
+watch, which was veille), all kept in one local SQLite database ("taf" is French slang for "work"). It was called fini until 0.6.1, then travail until 0.7.0, and replaces the Ruby fini CLI
 (`git show 8dd3731^:lib/fini/models/log/message_parser.rb` for its message parser).
 
 It is built on [tui-kit](../tui-kit), shared with outils, flotte and yafyaf-tui: the themes and the
@@ -16,8 +16,19 @@ tabs are the first row, and every message goes to the footer.
 - Help (`TafHelpScreen`, as in outils) lists the bindings that have a description and a `group`
   (`tui_kit.shortcuts.ACTIONS` or `GENERAL`): `TafApp.BINDINGS` on the left, under General, and
   on the right those the tab on show names in its `help_section()` (the Todos or Notes list's, a
-  todo's or a note's while one is on show, the Logs' or the Stats'); document a new key there
+  todo's or a note's while one is on show, the Watch list's or an item's, the Logs' or the Stats');
+  document a new key there
 - Never hardcode a color in a `.tcss` file
+- No command but the TUI loads Textual or Rich: `taf/__main__.py` imports the app and tui-kit's
+  `start` only to start the TUI, and `taf/watch/` and `todo_command.py` never import a widget
+  (`ImportTest` in `tests/test_watch.py`). Agent hooks run `taf watch context`, which must stay quick
+- `taf watch context` runs in agent hooks: it must never fail or print anything when there is nothing
+- The Slack run must stay read-only: tools come from `slack.READ_TOOLS`, `slack.WRITE_TOOLS` is
+  refused by name, and `claude.run_claude` uses `--permission-mode dontAsk` and
+  `--setting-sources ""` so the user's auto mode and allow rules never apply
+- Never store raw messages: only the items the triage run returns, and for GitHub who did what and
+  links, never comment text
+- Tests never run Claude or `gh`: the collectors take the runner as an argument (`run=`)
 
 ## Run
 
@@ -28,11 +39,15 @@ taf log                                # today's logs
 taf log -v 2                           # the last 2 days' logs
 taf log -e 2                           # edit the last 2 days' logs in $EDITOR
 taf todo "Refactor the subscriptions #rails"   # write a todo
+taf todo                               # the open todos; taf todo list|show|done|reopen
 taf note "Wifi password is on the fridge #home" # write a note
+taf watch                              # what needs the user, by project; taf watch --help
+taf watch context                      # what an agent reads when it starts work
+taf watch collect                      # read GitHub and Slack now (a timer does it; Slack costs money)
 ```
 
 `taf` refuses to start unless stdin and stdout are a terminal (tui-kit's `start`); `taf log`,
-`taf todo` and `taf note` do not go through that check.
+`taf todo`, `taf note` and `taf watch` do not go through that check.
 
 ## Test
 
@@ -56,20 +71,31 @@ the commented-out `../tui-kit` path.
 taf/                       # git root + pyproject.toml (run uv commands here)
   taf/                     # Python package
     __init__.py         # The version and the repository's URL
-    __main__.py         # The command line: the TUI, or `taf log`'s own parser
-    note_command.py     # `taf note` and `taf todo`: write one in the shell, tags at the end on their own line; no Textual
+    __main__.py         # The command line: the TUI, `taf log`'s own parser, and the todo and watch commands
+    note_command.py     # `taf note` and `taf todo "text"`: write one in the shell, tags at the end on their own line; no Textual
+    todo_command.py     # `taf todo list|show|done|reopen`; no Textual
     log_command.py      # `taf log`: log, view and edit in the shell, as the Ruby fini did; no Textual
     message.py          # A message's @duration, @context and +action, and the rules that infer the rest; no Textual
     app.py              # TafApp, a tui-kit BaseApp: TABS, the footer and its messages, the keys
-    config.py           # Optional ~/.config/taf/config.yml (theme, through tui_kit.config; database_path)
+    config.py           # Optional ~/.config/taf/config.yml (theme, through tui_kit.config; database_path; the watch: section as written)
     database.py         # Opening the SQLite database and its migrations; no Textual
     editor.py           # edit_text: some text in $EDITOR through a temporary file; no Textual
     notes.py            # Note (a todo is a note of the kind todo), listing and searching, saving, done and pinned, #tags; no Textual
     logs.py             # Log, reading, creating and replacing logs, formatting a duration; no Textual
     stats.py            # The Stats tab's sums: time per day, action and month, periods, shades; no Textual
+    watch/              # The watch, which was veille; no Textual:
+      cli.py            #   `taf watch` and its commands
+      config.py         #   the watch: section of config.yml: model, budget, Slack, GitHub
+      items.py          #   items, cursors and runs
+      projects.py       #   projects (pieces of work, not repos), their channel and branch links
+      github.py         #   GitHub (`gh`): a project per open PR, items for replies, failing CI, review requests
+      claude.py         #   headless `claude -p` with structured output
+      slack.py          #   the Slack collector: prompt, cursor, saving items
+      prompts/slack.md  #   what the triage run reads and keeps
+      view.py           #   the Watch tab's list: WatchItem, grouped by project
     screens/            # TafHelpScreen: Help with the app's keys and the tab's own, as in outils
     widgets/            # One view per tab: notes_tab.py, NotesTab and TodosTab (the list, notes_view.py, whose rows are
-                        # notes_table.py, or one note, note_detail.py, in note_markdown.py), logs_view.py and stats_view.py;
+                        # notes_table.py, or one note, note_detail.py, in note_markdown.py), watch_tab.py, logs_view.py and stats_view.py;
                         # dashed_rule.py, the rule under the lists' count, copied from yafyaf-tui
     styles/taf.tcss     # taf's own styles, joined after tui-kit's (app.STYLE_FILES)
 ```
@@ -77,7 +103,7 @@ taf/                       # git root + pyproject.toml (run uv commands here)
 ## Layout
 
 The `#tabs` `TabbedContent` is the first row, one tab per entry in `TABS` (`app.py`): Notes,
-then Todos, then Logs, then Stats; the app opens on Notes. Each pane is `<name>-tab` and holds its view, `<name>-view`. A click
+then Todos, then Watch, then Logs, then Stats; the app opens on Notes. Each pane is `<name>-tab` and holds its view, `<name>-view`. A click
 on a tab or `tab` switches; `tab` is an app binding with `priority`, so the screen's own `tab`
 (focus next) never runs, and it is skipped while a panel or dialog is up. The tabs cannot take
 focus, so a view keeps its keys. `TafApp.tab` is the name of the tab on show. When a tab shows,
@@ -154,7 +180,7 @@ blocks; its styles map Textual's markdown onto the palette). Escape or `q` goes 
 end of the date's line are Close, back to the list like Escape, then a blue Edit and a red Delete
 (which asks first, Cancel focused). While the list is on show, the footer has a green Refresh after
 Exit, which reloads it like `r` (the tab's `reload`), for todos written by `taf todo` meanwhile;
-it shows on Logs too, not on Stats (`TafApp.refresh_footer`, also run when the tab changes).
+it shows on Watch's list and on Logs too, not on Stats (`TafApp.refresh_footer`, also run when the tab changes).
 
 Editing (`NotesTab.edit`) opens the todo in `$EDITOR` (`editor.edit_text`, inside
 `App.suspend`) as markdown under YAML front matter with `id`, `created_at`, `updated_at`, `done_at` (the
@@ -186,6 +212,59 @@ starts on.
 
 A `Select` sends `Changed` when mounted: `NotesView._tag_picked` ignores a pick of the tag
 already in the search, or the Todos tab's list would take focus and the app would open on Todos.
+
+## Watch
+
+The Watch tab (`WatchTab`, `widgets/watch_tab.py`) lists the open watch items under a heading per
+project, the project with the latest activity first and "No project" last; inside one, pinned first,
+then the latest first (`watch.view.grouped`). It reuses `NotesTable` and `NoteDetail`: a
+`WatchItem` has what a todo has (`summary`, `content`, `pinned`, `done`, `updated_at`, which is
+when it happened), so the table and the view show it like one. The table has no cell padding of its
+own: each cell carries its spaces, so a heading starts at the row's left edge, cut where the columns
+meet (`NotesTable._heading`), and a blank row (`Spacer`) comes before each heading but the first.
+The cursor skips headings and blank rows. A row has no id (an item's id is another count than the
+todos'), and ends with its source, "slack" or "github", and its kind unless it is `action`; an fyi
+is gray. Keys: `x` done, `p` or space pin, `o` opens its link (Slack or GitHub), Enter shows it in
+full (`WatchDetail`, no Edit or Delete), `f` cycles Open, Done, All, `/` searches its words, `r`
+reloads, `y` copies; the list also reloads every minute (`RELOAD_SECONDS`), for what the timer
+adds. Nothing in the TUI makes an item or changes its project: the collectors and `taf watch` do.
+Todos and watch items stay apart on purpose: todos have no project.
+
+`taf watch collect` (a timer runs it) reads GitHub, then Slack, into the `watch_` tables (migration
+4), with the `watch:` section of the config. The lock next to the database (`taf.watch.lock`) stops
+two collects at once; it sends a desktop notification (`notify-send`, app "taf") when a source gives
+new or closed items, or fails.
+
+How a Slack run works: `slack.collect` reads from the `slack` cursor (a Unix time) with
+`slack_search_public_and_private`, date filter plus exact `after`, oldest first, at most
+`max_pages` pages of 20. On success the cursor moves to the last message read when pages were left,
+else to the run's start minus two minutes; on error it stays. An item's key is
+`<channel>:<thread ts>`, so a thread seen again updates its item and keeps its status, unless the
+run says it is resolved (then done). The run is shown the open Slack items (`MAX_OPEN_ITEMS`) and
+may close them (`closed_ids`, only ids it was shown) or update one by `existing_id`. It is also
+shown the active projects and may add some (`projects`, names checked by `projects.NAME`) and link
+channels to them; a channel links to one project only. `MCP_CONNECTION_NONBLOCKING=false` is
+required: without it the headless run starts before the connector is up and has no Slack tools.
+
+How a GitHub sync works: `github.sync` runs `gh` only, no Claude run. Each run it rebuilds the
+GitHub items from scratch and saves them by key: `replies:<pr url>` (others' comments and reviews
+since the user's last comment or review on their PR; `ignore_users` and `[bot]` accounts skipped;
+fyi when all are approvals), `ci:<pr url>` (failing checks on the last commit, the latest run of
+each check, CANCELLED ignored) and `review:<pr url>` (`user-review-requested:@me`, plus each of
+`review_teams` not yet approved or reviewed by the user; drafts and the user's own PRs left out). An
+open GitHub item missing from the run is closed as done; a closed one comes back open when its
+`happened_at` changes. A `gh` error stops the sync before anything changes.
+
+Projects: a project is a piece of work (`follow-privacy-levels`), never a repo, with a number id
+(a rename changes one row). `github.sync` gives every open PR of the user a project: its branch's
+linked one, else one named after the branch without the user's prefix (`jean/` or `jean-`), about
+the PR title. Projects with PRs, all closed, no open item and no channel are archived; a new PR on
+their branch reactivates them. `project_for_branch` finds the current branch's project: a branch
+link first, else the longest project name the branch contains. `taf watch context` prints that
+project's items, or, with no match, the projects with open items and how to link.
+
+Items agents or the user add (`taf watch add`) have the source `manual`, a random key, and the
+current branch's project unless `--project` says otherwise.
 
 ## Logs
 
@@ -322,9 +401,22 @@ and prints `Todo 12 created: ...` with the new id.
 A tag inside the message stays where it is, and a message of tags only is kept as is. The message
 must be quoted when it has a tag: the shell reads an unquoted `#rails` as a comment.
 
+`taf todo` (or `taf todos`) alone lists the open todos; `taf todo list [--done|--all] [words
+#tags]`, `show ID`, `done ID...` and `reopen ID...` are `todo_command.py`'s, one line a todo
+(`#29 [ ] Mutual follows visibility #prompts #follows ★`). Any other first word writes a todo, so a
+todo starting with `list`, `show`, `done` or `reopen` must start differently.
+
+`taf watch` (or `taf watches`) is `watch/cli.py`, loaded only for it. Alone it lists every open item
+by project and when Slack was last read; its commands are `add`, `list`, `search`, `show`, `done`,
+`reopen`, `pin`, `unpin`, `context`, `collect`, `runs` and `project` (`link`, `unlink`, `assign`,
+`rename`, `merge`, `archive`, `activate`).
+
 ## Config
 
-`~/.config/taf/config.yml` is optional. It is the file the Ruby fini read. `action` and `context`
+`~/.config/taf/config.yml` is optional. It is the file the Ruby fini read. Its `watch:` section
+holds the collectors' settings (`watch/config.py`: `model`, `max_budget_usd`, `slack.skip_channels`,
+`max_pages`, `first_run_hours`, `github.review_teams`, `ignore_users`); `config.example.yml` shows
+them. `action` and `context`
 each hold a `default` and `rules`, a name per list of regular expressions (`config._read_inference`;
 a `null` or invalid pattern is skipped, the latter with a warning). `database_path` is the
 SQLite file (`~` expanded), `~/.config/taf/taf.sqlite3` by default.

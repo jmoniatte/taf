@@ -9,10 +9,10 @@ STATUSES = ("open", "done")
 # Items with their project's name, and open or done from done_at, as the command line and agents see them
 SELECT_ITEMS = (
     "SELECT i.*, p.name AS project, CASE WHEN i.done_at IS NULL THEN 'open' ELSE 'done' END AS status "
-    "FROM veille_items i LEFT JOIN veille_projects p ON p.id = i.project_id"
+    "FROM watch_items i LEFT JOIN watch_projects p ON p.id = i.project_id"
 )
 # An item names its project; the tables hold its id
-PROJECT_ID = "(SELECT id FROM veille_projects WHERE name = :project)"
+PROJECT_ID = "(SELECT id FROM watch_projects WHERE name = :project)"
 
 
 def now() -> str:
@@ -41,7 +41,7 @@ def save_item(db: sqlite3.Connection, item: Item) -> None:
     stamp = now()
     db.execute(
         f"""
-        INSERT INTO veille_items (source, key, project_id, kind, summary, details, people, url, due, done_at,
+        INSERT INTO watch_items (source, key, project_id, kind, summary, details, people, url, due, done_at,
                                   happened_at, created_at, updated_at)
         VALUES (:source, :key, {PROJECT_ID}, :kind, :summary, :details, :people, :url, :due,
                 CASE WHEN :resolved THEN :stamp END, :happened_at, :stamp, :stamp)
@@ -60,7 +60,7 @@ def update_item(db: sqlite3.Connection, item_id: int, item: Item) -> bool:
     """Rewrite an open item of the same source with what a later conversation said; done if resolved."""
     cursor = db.execute(
         f"""
-        UPDATE veille_items SET
+        UPDATE watch_items SET
             project_id = coalesce({PROJECT_ID}, project_id), kind = :kind, summary = :summary,
             details = :details, people = :people, url = coalesce(url, :url), due = coalesce(:due, due),
             done_at = CASE WHEN :resolved THEN :stamp END,
@@ -104,7 +104,7 @@ def set_done(db: sqlite3.Connection, item_ids: list[int], done: bool = True) -> 
     for item_id in item_ids:
         stamp = now()
         cursor = db.execute(
-            "UPDATE veille_items SET done_at = CASE WHEN ? THEN coalesce(done_at, ?) END, updated_at = ? WHERE id = ?",
+            "UPDATE watch_items SET done_at = CASE WHEN ? THEN coalesce(done_at, ?) END, updated_at = ? WHERE id = ?",
             (done, stamp, stamp, item_id),
         )
         if cursor.rowcount == 0:
@@ -114,7 +114,7 @@ def set_done(db: sqlite3.Connection, item_ids: list[int], done: bool = True) -> 
 
 def set_pinned(db: sqlite3.Connection, item_id: int, pinned: bool) -> bool:
     """Pin or unpin the item; False when it does not exist. updated_at says what the source last said."""
-    return db.execute("UPDATE veille_items SET pinned = ? WHERE id = ?", (pinned, item_id)).rowcount > 0
+    return db.execute("UPDATE watch_items SET pinned = ? WHERE id = ?", (pinned, item_id)).rowcount > 0
 
 
 def set_project(db: sqlite3.Connection, item_ids: list[int], project: str | None) -> list[int]:
@@ -122,7 +122,7 @@ def set_project(db: sqlite3.Connection, item_ids: list[int], project: str | None
     missing = []
     for item_id in item_ids:
         cursor = db.execute(
-            "UPDATE veille_items SET project_id = (SELECT id FROM veille_projects WHERE name = ?), updated_at = ? WHERE id = ?",
+            "UPDATE watch_items SET project_id = (SELECT id FROM watch_projects WHERE name = ?), updated_at = ? WHERE id = ?",
             (project, now(), item_id),
         )
         if cursor.rowcount == 0:
@@ -131,13 +131,13 @@ def set_project(db: sqlite3.Connection, item_ids: list[int], project: str | None
 
 
 def get_cursor(db: sqlite3.Connection, source: str) -> str | None:
-    row = db.execute("SELECT value FROM veille_cursors WHERE source = ?", (source,)).fetchone()
+    row = db.execute("SELECT value FROM watch_cursors WHERE source = ?", (source,)).fetchone()
     return row["value"] if row else None
 
 
 def set_cursor(db: sqlite3.Connection, source: str, value: str) -> None:
     db.execute(
-        "INSERT INTO veille_cursors (source, value, updated_at) VALUES (?, ?, ?) "
+        "INSERT INTO watch_cursors (source, value, updated_at) VALUES (?, ?, ?) "
         "ON CONFLICT (source) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
         (source, value, now()),
     )
@@ -148,11 +148,11 @@ def record_run(
     pages: int | None, items: int, error: str | None,
 ) -> None:
     db.execute(
-        "INSERT INTO veille_runs (source, started_at, finished_at, cost_usd, pages, items, error) "
+        "INSERT INTO watch_runs (source, started_at, finished_at, cost_usd, pages, items, error) "
         "VALUES (?, ?, ?, ?, ?, ?, ?)",
         (source, started_at, now(), cost_usd, pages, items, error),
     )
 
 
 def recent_runs(db: sqlite3.Connection, limit: int = 20) -> list[sqlite3.Row]:
-    return db.execute("SELECT * FROM veille_runs ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
+    return db.execute("SELECT * FROM watch_runs ORDER BY id DESC LIMIT ?", (limit,)).fetchall()

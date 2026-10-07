@@ -28,3 +28,15 @@ context:
     mobile:
       - '\bandroid\b'
       - '\bios\b'
+
+# Watch: what needs you, collected from Slack and GitHub (taf watch collect, on a timer)
+watch:
+  model: sonnet                  # the Claude model that reads Slack
+  max_budget_usd: 1.0            # per collector run
+  slack:
+    skip_channels: []            # bot feeds: reading them costs money and finds nothing
+    max_pages: 10                # 20 messages a page; the rest waits for the next run
+    first_run_hours: 24
+  github:
+    review_teams: []             # review requests to these teams count as yours ("org/team")
+    ignore_users: []             # comments from these accounts never need a reply

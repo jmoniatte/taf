@@ -45,7 +45,7 @@ def run_claude(
     ]
     # Headless runs otherwise start before the claude.ai connectors finish connecting, and see no Slack tools
     env = {**os.environ, "MCP_CONNECTION_NONBLOCKING": "false"}
-    with tempfile.TemporaryDirectory(prefix="veille-") as cwd:
+    with tempfile.TemporaryDirectory(prefix="taf-watch-") as cwd:
         try:
             done = subprocess.run(
                 command, cwd=cwd, env=env, capture_output=True, text=True, timeout=timeout, check=False

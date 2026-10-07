@@ -3,10 +3,10 @@ import unittest
 from datetime import datetime
 from pathlib import Path
 
-from taf.current import Group, get_item, grouped, local, set_done, set_pinned, current_items
+from taf.watch.view import Group, get_item, grouped, local, set_done, set_pinned, shown_items
 from taf.database import open_database
-from taf.veille.items import Item, save_item
-from taf.veille.projects import add_project
+from taf.watch.items import Item, save_item
+from taf.watch.projects import add_project
 
 
 def labels(rows: list) -> list[str]:
@@ -28,18 +28,18 @@ class CurrentTest(unittest.TestCase):
         save_item(self.db, Item("slack", "C2:1", "fyi", "Deploy moved", details="to Friday", happened_at="2026-10-02T10:00:00-07:00"))
         save_item(self.db, Item("github", "ci:u/1", "action", "CI fails on r#1", url="https://ci/1", happened_at="2026-10-01T10:00:00+00:00"))
 
-        items = current_items(self.db, status="open")
+        items = shown_items(self.db, status="open")
         self.assertEqual(labels(grouped(items)), ["follow", "Answer Kevin", "Ask about QA", "No project", "Deploy moved", "CI fails on r#1"])
         qa = next(item for item in items if item.summary == "Ask about QA")
         self.assertTrue(set_pinned(self.db, qa.id, True).pinned)
-        self.assertEqual(labels(grouped(current_items(self.db)))[1:3], ["Ask about QA", "Answer Kevin"])
+        self.assertEqual(labels(grouped(shown_items(self.db)))[1:3], ["Ask about QA", "Answer Kevin"])
 
         kevin = next(item for item in items if item.summary == "Answer Kevin")
         self.assertEqual(kevin.content, "Answer Kevin\n\n- Kind: action\n- [Open in Slack](https://slack/1)")
         self.assertTrue(set_done(self.db, kevin.id, True).done)
-        self.assertEqual([item.summary for item in current_items(self.db, status="done")], ["Answer Kevin"])
+        self.assertEqual([item.summary for item in shown_items(self.db, status="done")], ["Answer Kevin"])
         self.assertFalse(set_done(self.db, kevin.id, False).done)
-        self.assertEqual([item.summary for item in current_items(self.db, "friday")], ["Deploy moved"])
+        self.assertEqual([item.summary for item in shown_items(self.db, "friday")], ["Deploy moved"])
         self.assertIsNone(get_item(self.db, 999))
         ci = next(item for item in items if item.source == "github")
         self.assertEqual((ci.source_name, ci.content), ("GitHub", "CI fails on r#1\n\n- Kind: action\n- [Open in GitHub](https://ci/1)"))

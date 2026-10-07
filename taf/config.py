@@ -31,6 +31,8 @@ class Config:
     context: Inference = field(default_factory=Inference)
     # Set with the Stats tab's Show dropdown, one of STATS_SHOW
     stats_show: str = STATS_SHOW[0]
+    # The watch: section, as written; taf.watch.config reads it
+    watch: object = field(default_factory=dict)
     # Where settings picked in the app are written back
     path: Path = field(default=CONFIG_FILE, compare=False)
     # Why the config file was ignored; the UI shows these
@@ -57,6 +59,7 @@ def load_config(path: Path = CONFIG_FILE) -> Config:
         config.warnings.append(warning)
     _read_database_path(data.get("database_path"), config)
     _read_stats_show(data.get("stats_show"), config)
+    config.watch = data.get("watch") or {}
     config.action = _read_inference("action", data.get("action"), config.warnings)
     config.context = _read_inference("context", data.get("context"), config.warnings)
     return config

@@ -2,10 +2,7 @@ import argparse
 import sys
 from collections.abc import Sequence
 
-from tui_kit.start import start
-
-from . import __version__, log_command, note_command
-from .app import TafApp
+from . import __version__, log_command, note_command, todo_command
 from .config import load_config
 
 LOG_EPILOG = """examples:
@@ -21,6 +18,14 @@ message format:
   +<action>     action (examples: +meeting, +code)
   an action or context not given comes from the rules in ~/.config/taf/config.yml
 """
+
+
+def start(name: str, app: type) -> None:
+    """tui-kit's start, loaded only to start the TUI: it brings Textual, which the commands never load,
+    so the agent hooks' taf watch context stays quick."""
+    from tui_kit.start import start as start_tui
+
+    start_tui(name, app)
 
 
 def days(value: str) -> int:
@@ -56,6 +61,8 @@ def note_parser(kind: str) -> argparse.ArgumentParser:
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument("message", nargs="+", help=f"the {kind}")
+    if kind == "todo":
+        parser.epilog += "\n\ntaf todo list|show|done|reopen: your todos (taf todo list --help); taf todo alone lists the open ones"
     return parser
 
 
@@ -65,20 +72,34 @@ def main(argv: Sequence[str] | None = None) -> None:
         # Its own parser: options may come after the message's words, which subcommands do not allow
         args = log_parser().parse_intermixed_args(argv[1:])
         raise SystemExit(log_command.run(load_config(), " ".join(args.message), view=args.view, edit=args.edit))
-    if argv[:1] in (["note"], ["todo"]):
-        kind = argv[0]
-        args = note_parser(kind).parse_args(argv[1:])
-        raise SystemExit(note_command.run(load_config(), " ".join(args.message), kind))
+    if argv[:1] in (["todo"], ["todos"]):
+        rest = argv[1:] or ["list"]
+        # A todo whose first word is one of these runs it: quote the todo or start it differently
+        if rest[0] in todo_command.COMMANDS:
+            raise SystemExit(todo_command.main(load_config(), rest))
+        args = note_parser("todo").parse_args(rest)
+        raise SystemExit(note_command.run(load_config(), " ".join(args.message), "todo"))
+    if argv[:1] == ["note"]:
+        args = note_parser("note").parse_args(argv[1:])
+        raise SystemExit(note_command.run(load_config(), " ".join(args.message), "note"))
+    if argv[:1] in (["watch"], ["watches"]):
+        from .watch import cli
+
+        raise SystemExit(cli.main(argv[1:]))
 
     parser = argparse.ArgumentParser(
         description="Todos, notes and a log of the work done, in the terminal.",
         epilog=(
             "taf log: log a message, or show or edit the logs, without the TUI (taf log --help); "
-            "taf todo: write a todo (taf todo --help); taf note: write a note (taf note --help)"
+            "taf todo: write, list and close todos (taf todo --help); taf note: write a note (taf note --help); "
+            "taf watch: what needs you from Slack and GitHub (taf watch --help)"
         ),
     )
     parser.add_argument("--version", action="version", version=f"taf {__version__}")
     parser.parse_args(argv)
+    # Only here: the commands above never load Textual
+    from .app import TafApp
+
     start("taf", TafApp)
 
 

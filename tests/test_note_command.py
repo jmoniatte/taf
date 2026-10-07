@@ -57,7 +57,7 @@ class NoteCommandTest(unittest.TestCase):
                 command.assert_called_with(config.return_value, "Call the bank #money", kind)
         start.assert_not_called()
         with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as raised:
-            main(["todo"])
+            main(["note"])
         self.assertEqual(raised.exception.code, 2)
 
 

@@ -1,19 +1,19 @@
-"""The Current tab's list: the items veille collects from Slack and GitHub, grouped by project; no Textual."""
+"""The Watch tab's list: the items collected from Slack and GitHub, grouped by project; no Textual."""
 
 import sqlite3
 from dataclasses import dataclass
 from datetime import datetime
 
-from .notes import split_query
-from .veille import items as veille_items
+from ..notes import split_query
+from . import items as stored
 
 # The kind of item that only informs; shown gray
 FYI = "fyi"
 
 
 @dataclass(frozen=True, slots=True)
-class VeilleItem:
-    """A veille item, from Slack or GitHub, shaped like a todo, so the notes' table and detail view show
+class WatchItem:
+    """A watch item, from Slack or GitHub, shaped like a todo, so the notes' table and detail view show
     it the same way."""
 
     id: int
@@ -27,7 +27,7 @@ class VeilleItem:
     pinned: bool
     done_at: datetime | None
     created_at: datetime
-    # When it last happened in Slack, else when veille saved it: what the order goes by
+    # When it last happened in Slack, else when it was saved: what the order goes by
     updated_at: datetime
     project: str | None = None
     tags: tuple[str, ...] = ()
@@ -72,54 +72,54 @@ class Group:
 
 
 def local(stamp: str | None) -> datetime | None:
-    """veille's ISO times, with their zone, as the naive local times taf's own dates are."""
+    """The collectors' ISO times, with their zone, as the naive local times taf's own dates are."""
     if not stamp:
         return None
     moment = datetime.fromisoformat(stamp)
     return moment.astimezone().replace(tzinfo=None) if moment.tzinfo else moment
 
 
-def current_items(connection: sqlite3.Connection, query: str = "", status: str = "all") -> list[VeilleItem]:
-    """veille's items with every word of the query and the status: open, done or all."""
+def shown_items(connection: sqlite3.Connection, query: str = "", status: str = "all") -> list[WatchItem]:
+    """The watch items with every word of the query and the status: open, done or all."""
     words, _ = split_query(query)
-    rows = veille_items.list_items(connection, status=None if status == "all" else status, words=words)
+    rows = stored.list_items(connection, status=None if status == "all" else status, words=words)
     return [_item(row) for row in rows]
 
 
-def grouped(items: list[VeilleItem]) -> list[Group | VeilleItem]:
+def grouped(items: list[WatchItem]) -> list[Group | WatchItem]:
     """The items under a heading per project, the project with the latest activity first and those
     with no project last; inside each, pinned first, then the latest first."""
     ordered = sorted(items, key=lambda item: (not item.pinned, -item.updated_at.timestamp()))
-    groups: dict[str | None, list[VeilleItem]] = {}
+    groups: dict[str | None, list[WatchItem]] = {}
     for item in sorted(ordered, key=lambda item: -item.updated_at.timestamp()):
         groups.setdefault(item.project, [])
     for item in ordered:
         groups[item.project].append(item)
-    rows: list[Group | VeilleItem] = []
+    rows: list[Group | WatchItem] = []
     for project in sorted(groups, key=lambda name: name is None):
         rows.append(Group(project, len(groups[project])))
         rows.extend(groups[project])
     return rows
 
 
-def get_item(connection: sqlite3.Connection, item_id: int) -> VeilleItem | None:
-    row = veille_items.get_item(connection, item_id)
+def get_item(connection: sqlite3.Connection, item_id: int) -> WatchItem | None:
+    row = stored.get_item(connection, item_id)
     return _item(row) if row else None
 
 
-def set_done(connection: sqlite3.Connection, item_id: int, done: bool) -> VeilleItem | None:
-    veille_items.set_done(connection, [item_id], done)
+def set_done(connection: sqlite3.Connection, item_id: int, done: bool) -> WatchItem | None:
+    stored.set_done(connection, [item_id], done)
     return get_item(connection, item_id)
 
 
-def set_pinned(connection: sqlite3.Connection, item_id: int, pinned: bool) -> VeilleItem | None:
-    veille_items.set_pinned(connection, item_id, pinned)
+def set_pinned(connection: sqlite3.Connection, item_id: int, pinned: bool) -> WatchItem | None:
+    stored.set_pinned(connection, item_id, pinned)
     return get_item(connection, item_id)
 
 
-def _item(row: sqlite3.Row) -> VeilleItem:
+def _item(row: sqlite3.Row) -> WatchItem:
     created = local(row["created_at"])
-    return VeilleItem(
+    return WatchItem(
         id=row["id"],
         source=row["source"],
         item_kind=row["kind"],

@@ -14,7 +14,7 @@
 #notes-view,
 #logs-view,
 #stats-view,
-#current-view {
+#watch-view {
     height: 1fr;
     padding: 0 1;
 }

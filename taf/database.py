@@ -39,10 +39,11 @@ MIGRATIONS = (
     ALTER TABLE notes ADD COLUMN kind TEXT NOT NULL DEFAULT 'note';
     UPDATE notes SET kind = 'todo';
     """,
-    # 4: veille's tables: projects (pieces of work, not repos) with the Slack channels and git branches
-    # linked to them, the items from Slack, the user's PRs, the collectors' cursors and runs
+    # 4: watch, what veille was: projects (pieces of work, not repos) with the Slack channels and git
+    # branches linked to them, the items from Slack, GitHub and agents, the user's PRs, the collectors'
+    # cursors and runs
     """
-    CREATE TABLE veille_projects (
+    CREATE TABLE watch_projects (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL UNIQUE,
         about TEXT NOT NULL DEFAULT '',
@@ -50,17 +51,17 @@ MIGRATIONS = (
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
     );
-    CREATE TABLE veille_project_links (
-        project_id INTEGER NOT NULL REFERENCES veille_projects (id),
+    CREATE TABLE watch_project_links (
+        project_id INTEGER NOT NULL REFERENCES watch_projects (id),
         kind TEXT NOT NULL,
         value TEXT NOT NULL,
         PRIMARY KEY (kind, value)
     );
-    CREATE TABLE veille_items (
+    CREATE TABLE watch_items (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         source TEXT NOT NULL,
         key TEXT NOT NULL,
-        project_id INTEGER REFERENCES veille_projects (id),
+        project_id INTEGER REFERENCES watch_projects (id),
         kind TEXT NOT NULL,
         summary TEXT NOT NULL,
         details TEXT NOT NULL DEFAULT '',
@@ -74,23 +75,23 @@ MIGRATIONS = (
         updated_at TEXT NOT NULL,
         UNIQUE (source, key)
     );
-    CREATE INDEX veille_items_project_done ON veille_items (project_id, done_at);
-    CREATE TABLE veille_prs (
+    CREATE INDEX watch_items_project_done ON watch_items (project_id, done_at);
+    CREATE TABLE watch_prs (
         url TEXT PRIMARY KEY,
         repo TEXT NOT NULL,
         number INTEGER NOT NULL,
         title TEXT NOT NULL,
         branch TEXT NOT NULL,
         state TEXT NOT NULL,
-        project_id INTEGER REFERENCES veille_projects (id),
+        project_id INTEGER REFERENCES watch_projects (id),
         updated_at TEXT NOT NULL
     );
-    CREATE TABLE veille_cursors (
+    CREATE TABLE watch_cursors (
         source TEXT PRIMARY KEY,
         value TEXT NOT NULL,
         updated_at TEXT NOT NULL
     );
-    CREATE TABLE veille_runs (
+    CREATE TABLE watch_runs (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         source TEXT NOT NULL,
         started_at TEXT NOT NULL,
@@ -112,7 +113,7 @@ def open_database(path: Path) -> sqlite3.Connection:
     path.parent.mkdir(parents=True, exist_ok=True)
     connection = sqlite3.connect(path, isolation_level=None)
     connection.row_factory = sqlite3.Row
-    # The veille timer writes while the app or an agent hook reads
+    # The watch timer writes while the app or an agent hook reads
     connection.execute("PRAGMA busy_timeout = 5000")
     connection.execute("PRAGMA foreign_keys = ON")
     migrate(connection, path if existed else None)

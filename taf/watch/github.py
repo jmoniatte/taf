@@ -53,26 +53,26 @@ def sync(db: sqlite3.Connection, config: GithubConfig = GithubConfig(), run=gh) 
     except (RuntimeError, OSError, subprocess.TimeoutExpired, json.JSONDecodeError, KeyError, TypeError) as error:
         report.error = f"github: {error}"
         return report
-    known = {r["url"] for r in db.execute("SELECT url FROM veille_prs")}
+    known = {r["url"] for r in db.execute("SELECT url FROM watch_prs")}
     for pr in found:
         url = pr["url"]
         if url in known:
-            db.execute("UPDATE veille_prs SET title = ?, state = 'open', updated_at = ? WHERE url = ?",
+            db.execute("UPDATE watch_prs SET title = ?, state = 'open', updated_at = ? WHERE url = ?",
                        (pr["title"], now(), url))
         else:
             db.execute(
-                "INSERT INTO veille_prs (url, repo, number, title, branch, state, updated_at) "
+                "INSERT INTO watch_prs (url, repo, number, title, branch, state, updated_at) "
                 "VALUES (?, ?, ?, ?, ?, 'open', ?)",
                 (url, pr["repository"]["name"], pr["number"], pr["title"], views[url]["headRefName"], now()),
             )
     open_urls = {pr["url"] for pr in found}
     report.open_prs = len(open_urls)
-    for row in db.execute("SELECT url FROM veille_prs WHERE state = 'open'").fetchall():
+    for row in db.execute("SELECT url FROM watch_prs WHERE state = 'open'").fetchall():
         if row["url"] not in open_urls:
-            db.execute("UPDATE veille_prs SET state = 'closed', updated_at = ? WHERE url = ?", (now(), row["url"]))
+            db.execute("UPDATE watch_prs SET state = 'closed', updated_at = ? WHERE url = ?", (now(), row["url"]))
 
-    prs = db.execute("SELECT * FROM veille_prs WHERE state = 'open' AND project_id IS NULL").fetchall()
-    prefixes = {row["branch"].split("/")[0] for row in db.execute("SELECT branch FROM veille_prs") if "/" in row["branch"]}
+    prs = db.execute("SELECT * FROM watch_prs WHERE state = 'open' AND project_id IS NULL").fetchall()
+    prefixes = {row["branch"].split("/")[0] for row in db.execute("SELECT branch FROM watch_prs") if "/" in row["branch"]}
     for pr in prs:
         project = linked_project(db, "branch", pr["branch"])
         if project is None:
@@ -81,16 +81,16 @@ def sync(db: sqlite3.Connection, config: GithubConfig = GithubConfig(), run=gh) 
                 add_project(db, project, pr["title"])
                 report.new_projects += 1
             link(db, project, "branch", pr["branch"])
-        db.execute("UPDATE veille_prs SET project_id = (SELECT id FROM veille_projects WHERE name = ?) WHERE url = ?",
+        db.execute("UPDATE watch_prs SET project_id = (SELECT id FROM watch_projects WHERE name = ?) WHERE url = ?",
                    (project, pr["url"]))
         # A new PR on an archived project's branch means the work started again
-        db.execute("UPDATE veille_projects SET status = 'active', updated_at = ? WHERE name = ? AND status = 'archived'",
+        db.execute("UPDATE watch_projects SET status = 'active', updated_at = ? WHERE name = ? AND status = 'archived'",
                    (now(), project))
 
     items = list(requested)
     for pr in found:
         project = db.execute(
-            "SELECT p.name FROM veille_prs pr LEFT JOIN veille_projects p ON p.id = pr.project_id WHERE pr.url = ?",
+            "SELECT p.name FROM watch_prs pr LEFT JOIN watch_projects p ON p.id = pr.project_id WHERE pr.url = ?",
             (pr["url"],),
         ).fetchone()["name"]
         view = views[pr["url"]]
@@ -109,13 +109,13 @@ def sync(db: sqlite3.Connection, config: GithubConfig = GithubConfig(), run=gh) 
 
 def track(db: sqlite3.Connection, item: Item) -> bool:
     """Save the item, reopening a closed one when something newer happened; True when it is new or reopened."""
-    row = db.execute("SELECT done_at, happened_at FROM veille_items WHERE source = ? AND key = ?",
+    row = db.execute("SELECT done_at, happened_at FROM watch_items WHERE source = ? AND key = ?",
                      (SOURCE, item.key)).fetchone()
     save_item(db, item)
     if row is None:
         return True
     if row["done_at"] is not None and item.happened_at != row["happened_at"]:
-        db.execute("UPDATE veille_items SET done_at = NULL WHERE source = ? AND key = ?", (SOURCE, item.key))
+        db.execute("UPDATE watch_items SET done_at = NULL WHERE source = ? AND key = ?", (SOURCE, item.key))
         return True
     return False
 
@@ -207,12 +207,12 @@ def archive_finished(db: sqlite3.Connection) -> int:
     """Projects with PRs, all closed, and no open item or channel: the work is over."""
     cursor = db.execute(
         """
-        UPDATE veille_projects SET status = 'archived', updated_at = ?
+        UPDATE watch_projects SET status = 'archived', updated_at = ?
         WHERE status = 'active'
-          AND EXISTS (SELECT 1 FROM veille_prs pr WHERE pr.project_id = veille_projects.id)
-          AND NOT EXISTS (SELECT 1 FROM veille_prs pr WHERE pr.project_id = veille_projects.id AND pr.state = 'open')
-          AND NOT EXISTS (SELECT 1 FROM veille_items i WHERE i.project_id = veille_projects.id AND i.done_at IS NULL)
-          AND NOT EXISTS (SELECT 1 FROM veille_project_links l WHERE l.project_id = veille_projects.id AND l.kind = 'channel')
+          AND EXISTS (SELECT 1 FROM watch_prs pr WHERE pr.project_id = watch_projects.id)
+          AND NOT EXISTS (SELECT 1 FROM watch_prs pr WHERE pr.project_id = watch_projects.id AND pr.state = 'open')
+          AND NOT EXISTS (SELECT 1 FROM watch_items i WHERE i.project_id = watch_projects.id AND i.done_at IS NULL)
+          AND NOT EXISTS (SELECT 1 FROM watch_project_links l WHERE l.project_id = watch_projects.id AND l.kind = 'channel')
         """,
         (now(),),
     )

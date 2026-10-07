@@ -17,7 +17,7 @@ from . import REPOSITORY_URL, __version__
 from .config import Config, load_config
 from .database import open_database
 from .screens import TafHelpScreen
-from .widgets import CurrentTab, LogsView, NotesTab, StatsView, TodosTab
+from .widgets import WatchTab, LogsView, NotesTab, StatsView, TodosTab
 from .widgets.buttons import flat_button
 
 STYLES_DIR = Path(__file__).parent / "styles"
@@ -27,7 +27,7 @@ STYLE_FILES = (*tui_kit.STYLE_FILES, STYLES_DIR / "taf.tcss")
 TABS = {
     "notes": ("Notes", NotesTab),
     "todos": ("Todos", TodosTab),
-    "current": ("Current", CurrentTab),
+    "watch": ("Watch", WatchTab),
     "logs": ("Logs", LogsView),
     "stats": ("Stats", StatsView),
 }
@@ -129,10 +129,10 @@ class TafApp(BaseApp):
         self.active_view.reload()
 
     def refresh_footer(self) -> None:
-        """Refresh shows while a list of notes, todos or veille's items, or the logs, are on show."""
+        """Refresh shows while a list of notes, todos or watch items, or the logs, are on show."""
         view = self.active_view
         viewing = getattr(view, "viewing", None) is not None
-        listed = isinstance(view, (NotesTab, CurrentTab)) and not viewing
+        listed = isinstance(view, (NotesTab, WatchTab)) and not viewing
         self.query_one("#btn-refresh").display = isinstance(view, LogsView) or listed
 
     def on_mount(self) -> None:
@@ -154,7 +154,7 @@ class TafApp(BaseApp):
         # refresh_css only re-applies TCSS; the lists bake their colors into Rich text
         for tab in self.query(NotesTab):
             tab.set_colors()
-        self.query_one(CurrentTab).set_colors()
+        self.query_one(WatchTab).set_colors()
         self.query_one(LogsView).set_colors()
         self.query_one(StatsView).set_colors()
 

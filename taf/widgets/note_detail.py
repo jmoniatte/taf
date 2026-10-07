@@ -6,7 +6,7 @@ from textual import on
 from textual.widgets import Button, Static
 from tui_kit.shortcuts import ACTIONS, GENERAL
 
-from ..current import VeilleItem
+from ..watch.view import WatchItem
 from ..notes import NOTE, TODO, long_date
 from .buttons import flat_button
 from .note_markdown import NoteMarkdown
@@ -105,7 +105,7 @@ class NoteDetail(Vertical):
         for box in self.query(DoneBox):
             box.show(note)
         self.query_one(PinStar).show(note)
-        slack = isinstance(note, VeilleItem)
+        slack = isinstance(note, WatchItem)
         self.query_one("#note-detail-id", Static).update(note.source_name if slack else f"#{note.id}")
         when = "Happened" if slack else "Updated"
         self.query_one("#note-detail-date", Static).update(f"{when} {long_date(note.updated_at)}")

@@ -1,5 +1,5 @@
-"""The Current tab: the items veille collects from Slack and GitHub, under their project, to star and
-close; one in full in place of the list. veille's timer writes them; nothing here makes or edits one."""
+"""The Watch tab: the items collected from Slack and GitHub, under their project, to star and close;
+one in full in place of the list. The collectors write them; nothing here makes or edits one."""
 
 import sqlite3
 
@@ -10,18 +10,18 @@ from textual.containers import Horizontal, Vertical
 from textual.widgets import DataTable, Input, Select, Static
 from tui_kit.shortcuts import ACTIONS, GENERAL
 
-from ..current import VeilleItem, get_item, grouped, set_done, set_pinned, current_items
+from ..watch.view import WatchItem, get_item, grouped, set_done, set_pinned, shown_items
 from ..notes import DEFAULT_STATUS, STATUS_WORD, STATUSES, TODO, split_status
 from .dashed_rule import DashedRule
 from .note_detail import NoteDetail, ViewClosed
 from .notes_table import ListColors, NoteChangeRequested, NotesTable
 from .notes_view import NoteOpened
 
-# How often the list reads again what veille's timer may have added
+# How often the list reads again what the watch timer may have added
 RELOAD_SECONDS = 60
 
 
-class CurrentView(Vertical):
+class WatchView(Vertical):
     """The list: a search box and the status, then the items under a heading per project."""
 
     BINDINGS = [
@@ -82,14 +82,14 @@ class CurrentView(Vertical):
         if self.database is None:
             self._set_count(self.app.database_error)
             return
-        items = current_items(self.database, words, self.status)
+        items = shown_items(self.database, words, self.status)
         self.table.show(grouped(items))
         status = "" if self.status == "all" else f" {self.status}"
         text = f"{len(items)}{status} {'item' if len(items) == 1 else 'items'}"
         self._set_count(f"{text} matching '{words}'" if words else text)
 
     def _reload_quietly(self) -> None:
-        """Read again what veille's timer may have added, unless the search is being typed."""
+        """Read again what the watch timer may have added, unless the search is being typed."""
         if self.display and self.database is not None and not self.query_one("#search", Input).has_focus:
             self.load()
 
@@ -146,7 +146,7 @@ class CurrentView(Vertical):
         event.stop()
         self.change(event)
 
-    def change(self, event: NoteChangeRequested) -> VeilleItem | None:
+    def change(self, event: NoteChangeRequested) -> WatchItem | None:
         """Mark done or pin in its row, which stays where it is: the order and the status filter apply
         on the next load."""
         if self.database is None:
@@ -179,7 +179,7 @@ class CurrentView(Vertical):
             self.post_message(NoteOpened(item))
 
 
-class ItemDetail(NoteDetail):
+class WatchDetail(NoteDetail):
     """One item in full: its box and star as in the list, and the link to Slack or GitHub; it cannot be
     edited or deleted."""
 
@@ -205,31 +205,31 @@ class ItemDetail(NoteDetail):
             self.app.open_url(self.note.url)
 
 
-class CurrentTab(Vertical):
-    """The Current tab: the list, or one item in full in its place."""
+class WatchTab(Vertical):
+    """The Watch tab: the list, or one item in full in its place."""
 
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
         # The item on show, or None while the list is
-        self.viewing: VeilleItem | None = None
+        self.viewing: WatchItem | None = None
 
     def compose(self) -> ComposeResult:
         # The Notes and Todos tabs' ids, for their styles
-        yield CurrentView(id="notes-list")
-        yield ItemDetail(self.app.palette["purple"], id="note-detail")
+        yield WatchView(id="notes-list")
+        yield WatchDetail(self.app.palette["purple"], id="note-detail")
 
     @property
-    def list(self) -> CurrentView:
-        return self.query_one(CurrentView)
+    def list(self) -> WatchView:
+        return self.query_one(WatchView)
 
     @property
-    def detail(self) -> ItemDetail:
-        return self.query_one(ItemDetail)
+    def detail(self) -> WatchDetail:
+        return self.query_one(WatchDetail)
 
     def help_section(self) -> tuple[str, tuple]:
         if self.viewing is not None:
-            return "Item", (ItemDetail.BINDINGS,)
-        return "Current", (CurrentView.BINDINGS, NotesTable.BINDINGS)
+            return "Item", (WatchDetail.BINDINGS,)
+        return "Watch", (WatchView.BINDINGS, NotesTable.BINDINGS)
 
     def tab_shown(self) -> None:
         if self.viewing is not None:

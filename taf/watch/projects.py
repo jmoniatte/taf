@@ -36,8 +36,8 @@ def list_projects(db: sqlite3.Connection, include_archived: bool = False) -> lis
     rows = db.execute(
         """
         SELECT p.name, p.about, p.status,
-               (SELECT count(*) FROM veille_items i WHERE i.project_id = p.id AND i.done_at IS NULL) AS open_items
-        FROM veille_projects p WHERE ? OR p.status = 'active'
+               (SELECT count(*) FROM watch_items i WHERE i.project_id = p.id AND i.done_at IS NULL) AS open_items
+        FROM watch_projects p WHERE ? OR p.status = 'active'
         ORDER BY open_items DESC, p.updated_at DESC
         """,
         (include_archived,),
@@ -45,14 +45,14 @@ def list_projects(db: sqlite3.Connection, include_archived: bool = False) -> lis
     projects = [Project(r["name"], r["about"], r["status"], r["open_items"]) for r in rows]
     by_name = {p.name: p for p in projects}
     for link in db.execute(
-        "SELECT p.name AS project, l.kind, l.value FROM veille_project_links l JOIN veille_projects p ON p.id = l.project_id "
+        "SELECT p.name AS project, l.kind, l.value FROM watch_project_links l JOIN watch_projects p ON p.id = l.project_id "
         "ORDER BY l.value"
     ):
         project = by_name.get(link["project"])
         if project:
             (project.channels if link["kind"] == "channel" else project.branches).append(link["value"])
     for pr in db.execute(
-        "SELECT pr.*, p.name AS project FROM veille_prs pr JOIN veille_projects p ON p.id = pr.project_id "
+        "SELECT pr.*, p.name AS project FROM watch_prs pr JOIN watch_projects p ON p.id = pr.project_id "
         "WHERE pr.state = 'open' ORDER BY pr.repo, pr.number"
     ):
         project = by_name.get(pr["project"])
@@ -62,22 +62,22 @@ def list_projects(db: sqlite3.Connection, include_archived: bool = False) -> lis
 
 
 def get_project(db: sqlite3.Connection, name: str) -> sqlite3.Row | None:
-    return db.execute("SELECT * FROM veille_projects WHERE name = ?", (name,)).fetchone()
+    return db.execute("SELECT * FROM watch_projects WHERE name = ?", (name,)).fetchone()
 
 
 def add_project(db: sqlite3.Connection, name: str, about: str = "", channels: list[str] = ()) -> None:
     """Create the project if it is new, and link the channels no other project has."""
     stamp = now()
     db.execute(
-        "INSERT INTO veille_projects (name, about, created_at, updated_at) VALUES (?, ?, ?, ?) "
+        "INSERT INTO watch_projects (name, about, created_at, updated_at) VALUES (?, ?, ?, ?) "
         "ON CONFLICT (name) DO UPDATE SET about = CASE WHEN about = '' THEN excluded.about ELSE about END, "
         "updated_at = excluded.updated_at",
         (name, about, stamp, stamp),
     )
     for channel in channels:
         db.execute(
-            "INSERT OR IGNORE INTO veille_project_links (project_id, kind, value) "
-            "VALUES ((SELECT id FROM veille_projects WHERE name = ?), 'channel', ?)",
+            "INSERT OR IGNORE INTO watch_project_links (project_id, kind, value) "
+            "VALUES ((SELECT id FROM watch_projects WHERE name = ?), 'channel', ?)",
             (name, channel.lstrip("#")),
         )
 
@@ -87,15 +87,15 @@ def link(db: sqlite3.Connection, name: str, kind: str, value: str) -> None:
     if get_project(db, name) is None:
         raise ProjectError(f"no project named {name}")
     db.execute(
-        "INSERT OR REPLACE INTO veille_project_links (project_id, kind, value) "
-        "VALUES ((SELECT id FROM veille_projects WHERE name = ?), ?, ?)",
+        "INSERT OR REPLACE INTO watch_project_links (project_id, kind, value) "
+        "VALUES ((SELECT id FROM watch_projects WHERE name = ?), ?, ?)",
         (name, kind, value.lstrip("#") if kind == "channel" else value),
     )
 
 
 def unlink(db: sqlite3.Connection, kind: str, value: str) -> bool:
     cursor = db.execute(
-        "DELETE FROM veille_project_links WHERE kind = ? AND value = ?",
+        "DELETE FROM watch_project_links WHERE kind = ? AND value = ?",
         (kind, value.lstrip("#") if kind == "channel" else value),
     )
     return cursor.rowcount > 0
@@ -108,7 +108,7 @@ def rename(db: sqlite3.Connection, old: str, new: str) -> None:
         raise ProjectError(f"{new} is not a valid name: lowercase letters, digits and dashes")
     if get_project(db, new) is not None:
         raise ProjectError(f"{new} already exists; use merge")
-    db.execute("UPDATE veille_projects SET name = ?, updated_at = ? WHERE name = ?", (new, now(), old))
+    db.execute("UPDATE watch_projects SET name = ?, updated_at = ? WHERE name = ?", (new, now(), old))
 
 
 def merge(db: sqlite3.Connection, source: str, target: str) -> None:
@@ -122,20 +122,20 @@ def merge(db: sqlite3.Connection, source: str, target: str) -> None:
     ids = (rows[1]["id"], rows[0]["id"])
     with db:
         db.execute("BEGIN")
-        for table in ("veille_project_links", "veille_items", "veille_prs"):
+        for table in ("watch_project_links", "watch_items", "watch_prs"):
             db.execute(f"UPDATE {table} SET project_id = ? WHERE project_id = ?", ids)
-        db.execute("DELETE FROM veille_projects WHERE id = ?", (ids[1],))
+        db.execute("DELETE FROM watch_projects WHERE id = ?", (ids[1],))
 
 
 def set_project_status(db: sqlite3.Connection, name: str, status: str) -> None:
-    cursor = db.execute("UPDATE veille_projects SET status = ?, updated_at = ? WHERE name = ?", (status, now(), name))
+    cursor = db.execute("UPDATE watch_projects SET status = ?, updated_at = ? WHERE name = ?", (status, now(), name))
     if cursor.rowcount == 0:
         raise ProjectError(f"no project named {name}")
 
 
 def linked_project(db: sqlite3.Connection, kind: str, value: str) -> str | None:
     row = db.execute(
-        "SELECT p.name FROM veille_project_links l JOIN veille_projects p ON p.id = l.project_id WHERE l.kind = ? AND l.value = ?",
+        "SELECT p.name FROM watch_project_links l JOIN watch_projects p ON p.id = l.project_id WHERE l.kind = ? AND l.value = ?",
         (kind, value),
     ).fetchone()
     return row["name"] if row else None
@@ -157,7 +157,7 @@ def project_for_branch(db: sqlite3.Connection, branch: str | None) -> str | None
     if not branch:
         return None
     row = db.execute(
-        "SELECT p.name FROM veille_project_links l JOIN veille_projects p ON p.id = l.project_id "
+        "SELECT p.name FROM watch_project_links l JOIN watch_projects p ON p.id = l.project_id "
         "WHERE l.kind = 'branch' AND l.value = ? AND p.status = 'active'",
         (branch,),
     ).fetchone()

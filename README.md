@@ -1,6 +1,7 @@
 # Taf
 
-Todos, notes and a log of the work done, in the terminal. All live in one local SQLite database.
+Todos, notes, a log of the work done, and what needs you from Slack and GitHub (the watch), in the
+terminal. All live in one local SQLite database.
 It was called fini until version 0.6.1, then travail until 0.7.0.
 
 ## Installation
@@ -24,14 +25,18 @@ taf log                                # today's logs
 taf log -v 2                           # the last 2 days' logs
 taf log -e 2                           # edit the last 2 days' logs in $EDITOR
 taf todo "Refactor the subscriptions #rails"   # write a todo
+taf todo                               # the open todos (taf todo list --all, --done, #tag)
+taf todo done 12                       # also: show, reopen
 taf note "Wifi password is on the fridge #home" # write a note
+taf watch                              # what needs you, by project
+taf watch --help                       # add, list, search, show, done, reopen, pin, project...
 ```
 
 A message takes `@30m`, `@1h` or `@1h45` for the time spent, `@context` and `+action`; an action
 or context it does not give comes from the rules in `~/.config/taf/config.yml`
 (`config.example.yml` shows them). `taf log --help` lists it all.
 
-`tab` switches between the Notes, Todos, Logs and Stats tabs. `?` lists every shortcut, `t` changes
+`tab` switches between the Notes, Todos, Watch, Logs and Stats tabs. `?` lists every shortcut, `t` changes
 the theme and `q` quits.
 
 - **Todos**: `n` writes a new todo, Enter shows one (Escape goes back), `e` edits it in `$EDITOR`
@@ -39,11 +44,50 @@ the theme and `q` quits.
   todos (`is:open` or `is:done` in the search), `/` searches, and `#tag` in a todo's text makes a
   tag to filter on.
 - **Notes**: the same as todos, without done. A search can hold several tags.
+- **Watch**: what needs you, under a heading per project: Slack threads, replies on your pull
+  requests, failing CI, reviews waiting on you, and items agents added. `x` closes one, `p` or
+  space stars it, `o` opens it in Slack or GitHub, Enter shows it in full, `f` shows open, done or
+  all. The list reloads every minute.
 - **Logs**: one week at a time, the last day first. `[` and `]` go to the previous and next week,
   `n` logs a new message, and `e` or a click on a day's date edits that day in `$EDITOR`. `j` and
   `k` scroll; select text with the mouse and press `y` to copy it.
 - **Stats**: where the time went, for a period and one action or all: a graph of the days, the
   share of each action, and the hours per month. Days off and US holidays show in their own color.
+
+## Watch
+
+A timer runs `taf watch collect`. It first reads GitHub with `gh` (no cost): your open pull
+requests, what others said on them since you last replied, their failing checks, and the pull
+requests waiting on your review or on one of your teams'. Then a headless Claude run (Sonnet by
+default) reads new Slack messages through the claude.ai Slack connector, with read-only tools, and
+keeps only the conversations that matter to you. Raw messages are never stored. GitHub items close
+by themselves once the PR is merged, CI passes, you reply, or the review is done.
+
+It needs `gh` logged in, and Claude Code logged into a claude.ai account with the Slack connector
+connected. Settings go in the `watch:` section of the config (`config.example.yml`). A systemd user
+timer, every 20 minutes during work hours:
+
+```ini
+# ~/.config/systemd/user/taf-watch.service
+[Service]
+Type=oneshot
+Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=%h/.local/bin/taf watch collect
+TimeoutStartSec=20min
+
+# ~/.config/systemd/user/taf-watch.timer
+[Timer]
+OnCalendar=Mon..Fri *-*-* 07..18:00/20
+RandomizedDelaySec=60
+
+[Install]
+WantedBy=timers.target
+```
+
+A project is a piece of work like `follow-privacy-levels`, not a repo. Each of your open pull
+requests gives one, named after its branch; the Slack run files items under projects by channel,
+PR or subject. Coding agents read the current branch's project with `taf watch context`, and add
+items with `taf watch add`. Watch was veille, a separate tool, before it moved into taf.
 
 ## Configuration
 
@@ -53,9 +97,14 @@ Nothing is required. `~/.config/taf/config.yml` can hold:
 theme: one-light                 # written by `t`
 database_path: '~/logs.sqlite3'  # ~/.config/taf/taf.sqlite3 by default
 stats_show: percentages          # or hours, set from the Stats tab
+watch:                           # the collectors' settings
+  slack:
+    skip_channels: [dev-notify]
+  github:
+    review_teams: [org/team]
 ```
 
-`config.example.yml` shows every key, including the action and context rules.
+`config.example.yml` shows every key, including the action and context rules and the watch's.
 
 ## Development
 

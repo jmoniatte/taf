@@ -1,5 +1,5 @@
-"""The table of the Notes, Todos and Current tabs: the id, a todo's check box and the star, then the
-summary with its links and tags. The Current tab's holds Slack items under a heading per project."""
+"""The table of the Notes, Todos and Watch tabs: the id, a todo's check box and the star, then the
+summary with its links and tags. The Watch tab's holds its items under a heading per project."""
 
 import re
 from dataclasses import dataclass
@@ -12,11 +12,11 @@ from textual.message import Message
 from textual.widgets import DataTable
 from tui_kit.shortcuts import ACTIONS, GENERAL
 
-from ..current import FYI, Group, VeilleItem
+from ..watch.view import FYI, Group, WatchItem
 from ..notes import TODO, Note, find_tags
 
-# What a row of the table can show: the Current tab's items look like todos
-Entry = Note | VeilleItem
+# What a row of the table can show: the Watch tab's items look like todos
+Entry = Note | WatchItem
 
 # Nerd Font check boxes (nf-md-checkbox_blank_outline, nf-md-checkbox_marked), as outils uses Nerd Font icons
 OPEN = "\U000f0131"
@@ -114,7 +114,7 @@ def row_key(row: Row) -> str:
         return f"space:{row.before.name}"
     if isinstance(row, Group):
         return f"project:{row.name}"
-    if isinstance(row, VeilleItem):
+    if isinstance(row, WatchItem):
         return f"slack:{row.id}"
     return str(row.id)
 
@@ -143,7 +143,7 @@ class NotesTable(DataTable):
         )
         self.kind = kind
         self._colors = colors
-        # The rows: notes, todos, or veille's items under their project's heading
+        # The rows: notes, todos, or watch items under their project's heading
         self.notes: list[Row] = []
         # Clicks on a todo's box and star column left of this x, from the column's start, hit the box:
         # the cell's space, the box and the next space
@@ -251,7 +251,7 @@ class NotesTable(DataTable):
         return text
 
     def _summary(self, note: Entry) -> Text:
-        if isinstance(note, VeilleItem):
+        if isinstance(note, WatchItem):
             # An fyi only informs: gray, like a done one
             text = summary_text(note.summary, self._colors, done=note.done or note.item_kind == FYI)
             kind = "" if note.item_kind == "action" else f" {note.item_kind}"

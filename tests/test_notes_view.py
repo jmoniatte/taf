@@ -14,9 +14,9 @@ from taf.app import TafApp
 from taf.config import Config
 from taf.database import open_database
 from taf.notes import NOTE, TODO, create_note, list_notes, long_date, set_done, set_pinned
-from taf.veille.items import Item, get_item, save_item
-from taf.veille.projects import add_project
-from taf.widgets import CurrentTab, ItemDetail, NoteDetail, NotesTab, NotesTable, TodoDetail, TodosTab
+from taf.watch.items import Item, get_item, save_item
+from taf.watch.projects import add_project
+from taf.widgets import WatchTab, WatchDetail, NoteDetail, NotesTab, NotesTable, TodoDetail, TodosTab
 
 
 def python_editor(code: str) -> str:
@@ -70,16 +70,16 @@ class AppCase(unittest.TestCase):
 
 
 
-class CurrentTabTest(AppCase):
-    TAB = "current"
+class WatchTabTest(AppCase):
+    TAB = "watch"
 
-    def test_current_items_under_their_project_to_close_and_star(self) -> None:
+    def test_shown_items_under_their_project_to_close_and_star(self) -> None:
         async def body(app, pilot) -> None:
             add_project(self.db, "follow")
             save_item(self.db, Item("slack", "C1:1", "action", "Answer Kevin", project="follow", url="https://slack/1",
                                     happened_at="2026-10-06T16:00:00+00:00"))
             save_item(self.db, Item("github", "ci:u/1", "action", "CI fails on r#1", url="https://ci/1", happened_at="2026-01-01T10:00:00+00:00"))
-            tab = app.query_one("#current-view", CurrentTab)
+            tab = app.query_one("#watch-view", WatchTab)
             await pilot.press("r")
             await pilot.pause()
             table = tab.query_one(NotesTable)
@@ -111,11 +111,11 @@ class CurrentTabTest(AppCase):
             # Enter shows it in full, without Edit or Delete; its box closes it again
             await pilot.press("enter")
             await pilot.pause()
-            detail = tab.query_one(ItemDetail)
+            detail = tab.query_one(WatchDetail)
             self.assertTrue(detail.display)
             self.assertEqual(str(detail.query_one("#note-detail-id", Static).render()), "Slack")
             self.assertFalse(detail.query_one("#btn-edit").display or detail.query_one("#btn-delete").display)
-            await pilot.click("#current-view #note-detail-done")
+            await pilot.click("#watch-view #note-detail-done")
             await pilot.pause()
             self.assertEqual(get_item(self.db, 1)["status"], "open")
             await pilot.press("escape")
@@ -258,7 +258,7 @@ class TodosViewTest(AppCase):
             await pilot.press("escape")
             await pilot.pause()
             self.assertTrue(refresh.display)
-            # On Current's list and the logs too, not on the stats
+            # On Watch's list and the logs too, not on the stats
             await pilot.press("tab")
             await pilot.pause()
             self.assertTrue(refresh.display)
