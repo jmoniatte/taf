@@ -6,6 +6,7 @@ import subprocess
 import sys
 import tempfile
 import time
+from datetime import datetime
 
 from textual import on
 from textual.worker import get_current_worker
@@ -17,7 +18,7 @@ from tui_kit.shortcuts import ACTIONS, GENERAL
 
 from ..watch.config import from_taf
 from ..watch.github import ready_to_deploy
-from ..watch.view import WatchItem, get_item, grouped, set_done, set_pinned, shown_items
+from ..watch.view import ago, last_collected, WatchItem, get_item, grouped, set_done, set_pinned, shown_items
 from ..notes import DEFAULT_STATUS, STATUS_WORD, STATUSES, TODO, split_status
 from .dashed_rule import DashedRule
 from .note_detail import NoteDetail, ViewClosed
@@ -242,6 +243,26 @@ class WatchTab(Vertical):
         # The item on show, or None while the list is
         self.viewing: WatchItem | None = None
         self.collecting = False
+        # When the last collect ended, read again with the list
+        self.collected_at: datetime | None = None
+
+    def on_mount(self) -> None:
+        self.read_collected_at()
+        self.set_interval(1, self.show_collected_at)
+        # For the timer's collects, which only the database tells of
+        self.set_interval(15, self.read_collected_at)
+
+    def read_collected_at(self) -> None:
+        database = self.app.database
+        self.collected_at = last_collected(database) if database is not None else None
+        self.show_collected_at()
+
+    def show_collected_at(self) -> None:
+        """"5 minutes ago" by the footer's Collect, every second; nothing while a collect runs."""
+        text = ""
+        if self.collected_at is not None and not self.collecting:
+            text = ago((datetime.now() - self.collected_at).total_seconds())
+        self.app.query_one("#collected-at", Static).update(text)
 
     def compose(self) -> ComposeResult:
         # The Notes and Todos tabs' ids, for their styles
@@ -288,7 +309,7 @@ class WatchTab(Vertical):
         button = self.app.query_one("#btn-collect")
         button.disabled = True
         button.label = "Collecting..."
-        self.notify("Collecting from GitHub, then Slack")
+        self.show_collected_at()
         self.run_worker(self._collect, thread=True, group="collect")
 
     def _collect(self) -> None:
@@ -321,9 +342,9 @@ class WatchTab(Vertical):
         button = self.app.query_one("#btn-collect")
         button.disabled = False
         button.label = "Collect"
-        if code == 0:
-            self.notify(out or "Collected")
-        else:
+        self.read_collected_at()
+        # Done: the time by the button says so; only a failure has a message
+        if code != 0:
             self.notify("\n".join(part for part in (out, err) if part) or "Collect failed", severity="error", timeout=10)
         self.list.action_refresh()
 

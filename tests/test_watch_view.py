@@ -3,9 +3,9 @@ import unittest
 from datetime import datetime
 from pathlib import Path
 
-from taf.watch.view import Group, get_item, grouped, local, set_done, set_pinned, shown_items
+from taf.watch.view import ago, last_collected, Group, get_item, grouped, local, set_done, set_pinned, shown_items
 from taf.database import open_database
-from taf.watch.items import Item, save_item
+from taf.watch.items import Item, record_run, save_item
 from taf.watch.projects import add_project
 
 
@@ -51,6 +51,16 @@ class CurrentTest(unittest.TestCase):
         self.assertNotEqual(labels(grouped(others, (0, "u")))[0], "Pull Requests")
         ci = next(item for item in items if item.source == "github")
         self.assertEqual((ci.source_name, ci.content), ("GitHub", "CI fails on r#1\n\n- Kind: action\n- Jenkins build: [https://ci/1](https://ci/1)\n- GitHub PR: [u/1](u/1)"))
+
+    def test_ago_and_the_last_collect(self) -> None:
+        steps = [(0, "just now"), (7, "5 seconds ago"), (12, "10 seconds ago"), (45, "30 seconds ago"), (60, "1 minute ago"),
+                 (19 * 60, "19 minutes ago"), (20 * 60 + 59, "20 minutes ago"), (37 * 60, "30 minutes ago"),
+                 (3600, "1 hour ago"), (5 * 3600, "5 hours ago"), (86400, "1 day ago"), (3 * 86400, "3 days ago")]
+        self.assertEqual([ago(seconds) for seconds, _ in steps], [label for _, label in steps])
+        self.assertIsNone(last_collected(self.db))
+        record_run(self.db, "github", "2026-10-07T10:00:00-07:00", None, None, 0, None)
+        record_run(self.db, "slack", "2026-10-07T10:00:05-07:00", 0.05, 1, 0, None)
+        self.assertEqual(last_collected(self.db), max(local(r["finished_at"]) for r in self.db.execute("SELECT finished_at FROM watch_runs")))
 
     def test_times_are_local(self) -> None:
         self.assertEqual(local("2026-10-06T16:00:00+00:00"), datetime.fromisoformat("2026-10-06T16:00:00+00:00").astimezone().replace(tzinfo=None))

@@ -15,7 +15,7 @@ from taf.app import TafApp
 from taf.config import Config
 from taf.database import open_database
 from taf.notes import NOTE, TODO, create_note, list_notes, long_date, set_done, set_pinned
-from taf.watch.items import Item, get_item, save_item
+from taf.watch.items import Item, get_item, now, record_run, save_item
 from taf.watch.projects import add_project
 from taf.widgets import WatchTab, WatchDetail, NoteDetail, NotesTab, NotesTable, TodoDetail, TodosTab
 
@@ -172,7 +172,8 @@ class WatchTabTest(AppCase):
             # Apart from taf: its own session, so quitting taf does not stop it
             self.assertEqual((command[1:], kwargs["start_new_session"]), (["-m", "taf", "watch", "collect"], True))
             self.assertEqual((button.disabled, str(button.label)), (False, "Collect"))
-            self.assertIn("slack: 2 items", str(app.query_one("FooterMessage").render()))
+            # No message when it worked: the time by the button tells
+            self.assertNotIn("slack: 2 items", str(app.query_one("FooterMessage").render()))
             # c does the same; a failure says why
             popen = fake_popen(1, "", "taf watch: another collect is running")
             with patch("taf.widgets.watch_tab.subprocess.Popen", popen):
@@ -181,10 +182,21 @@ class WatchTabTest(AppCase):
                 await pilot.pause()
             self.assertEqual(len(popen.started), 1)
             self.assertIn("another collect is running", str(app.query_one("FooterMessage").render()))
+            # When the last collect ended, by the button; nothing while one runs
+            label = app.query_one("#collected-at", Static)
+            self.assertEqual(str(label.render()), "")
+            record_run(self.db, "slack", now(), 0.05, 1, 0, None)
+            tab = app.query_one("#watch-view", WatchTab)
+            tab.read_collected_at()
+            self.assertEqual(str(label.render()), "just now")
+            tab.collecting = True
+            tab.show_collected_at()
+            self.assertEqual(str(label.render()), "")
+            tab.collecting = False
             # Only on Watch
             await pilot.press("tab")
             await pilot.pause()
-            self.assertFalse(button.display)
+            self.assertFalse(button.display or label.display)
 
         self.run_app(body)
 

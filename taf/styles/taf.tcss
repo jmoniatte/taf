@@ -411,6 +411,15 @@ TafHelpScreen #shortcuts-general {
     margin: 0 0 0 1;
 }
 
+/* After Collect, on Watch: when the last collect ended; empty while one runs */
+#collected-at {
+    display: none;
+    width: auto;
+    height: 1;
+    margin: 0 0 0 2;
+    color: $comment;
+}
+
 /* Help on the right; a message in its place while one shows (FooterMessage), right-aligned over
    the room left of it, an error still on up to three lines */
 #btn-help {

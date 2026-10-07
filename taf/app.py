@@ -8,7 +8,7 @@ from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal
 from textual.notifications import Notification
-from textual.widgets import Button, TabbedContent, TabPane, Tabs
+from textual.widgets import Button, Static, TabbedContent, TabPane, Tabs
 from tui_kit.base_app import COPY_BINDING, HELP_BINDING, THEME_BINDING, BaseApp
 from tui_kit.header_notification import HeaderNotification
 from tui_kit.shortcuts import GENERAL
@@ -103,6 +103,8 @@ class TafApp(BaseApp):
             yield flat_button("Refresh", "btn-refresh", classes="tinted -green")
             # Only on Watch: runs taf watch collect now, as the timer does
             yield flat_button("Collect", "btn-collect", classes="tinted -cyan")
+            # When the last collect ended, "5 minutes ago", kept up to date by WatchTab
+            yield Static("", id="collected-at")
             yield flat_button("Help", "btn-help")
             yield FooterMessage()
 
@@ -142,6 +144,7 @@ class TafApp(BaseApp):
         listed = isinstance(view, (NotesTab, WatchTab)) and not viewing
         self.query_one("#btn-refresh").display = isinstance(view, LogsView) or listed
         self.query_one("#btn-collect").display = isinstance(view, WatchTab)
+        self.query_one("#collected-at").display = isinstance(view, WatchTab)
 
     def on_mount(self) -> None:
         # The view keeps focus for its keys; tabs switch by click or with tab

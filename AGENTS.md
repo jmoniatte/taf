@@ -241,8 +241,12 @@ adds. `c`, or the footer's cyan Collect (after Refresh, only on Watch), runs `ta
 its own process and session (`WatchTab.collect`), as the timer does: its lock keeps the two apart,
 its prints go to temporary files, not pipes, and it finishes even when taf quits first. A worker
 thread looks every second whether it ended; quitting cancels the worker, so taf exits at once rather
-than wait for the collect. The button reads "Collecting..." and is disabled until it ends; its
-output, or its error, shows as a message, then the list reloads. Nothing in the TUI makes an item or changes its project: the collectors and `taf watch` do.
+than wait for the collect. The button reads "Collecting..." and is disabled until it ends; only
+a failure shows a message (its error), then the list reloads. After Collect, `#collected-at`
+says when the last collect ended, the timer's or the button's ("5 minutes ago",
+`view.last_collected` and `view.ago`: 5, 10, 30 seconds, then minute by minute up to the timer's 20
+minutes, `COLLECT_MINUTES`, then by 10 minutes, hours, days). It is redrawn every second and read
+again every 15 seconds and after a collect; it is empty while the button's collect runs. Nothing in the TUI makes an item or changes its project: the collectors and `taf watch` do.
 Todos and watch items stay apart on purpose: todos have no project.
 
 `taf watch collect` (a timer runs it) reads GitHub, then Slack, into the `watch_` tables (migration

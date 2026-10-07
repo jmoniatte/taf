@@ -132,6 +132,36 @@ def grouped(items: list[WatchItem], ready: tuple[int, str] | None = None) -> lis
     return rows
 
 
+# The timer's interval (taf-watch.timer): "N minutes ago" goes minute by minute up to it
+COLLECT_MINUTES = 20
+
+
+def last_collected(connection: sqlite3.Connection) -> datetime | None:
+    """When the last collect, from the timer or the Collect button, ended."""
+    row = connection.execute("SELECT max(finished_at) AS at FROM watch_runs").fetchone()
+    return local(row["at"]) if row else None
+
+
+def ago(seconds: float) -> str:
+    """5, 10 or 30 seconds ago, then each minute up to the timer's interval, then by 10 minutes,
+    then hours, then days."""
+    if seconds < 5:
+        return "just now"
+    for limit, label in ((10, "5 seconds"), (30, "10 seconds"), (60, "30 seconds")):
+        if seconds < limit:
+            return f"{label} ago"
+    minutes = int(seconds // 60)
+    if minutes <= COLLECT_MINUTES:
+        return "1 minute ago" if minutes == 1 else f"{minutes} minutes ago"
+    if minutes < 60:
+        return f"{minutes // 10 * 10} minutes ago"
+    hours = minutes // 60
+    if hours < 24:
+        return "1 hour ago" if hours == 1 else f"{hours} hours ago"
+    days = hours // 24
+    return "1 day ago" if days == 1 else f"{days} days ago"
+
+
 def get_item(connection: sqlite3.Connection, item_id: int) -> WatchItem | None:
     row = stored.get_item(connection, item_id)
     return _item(row) if row else None
