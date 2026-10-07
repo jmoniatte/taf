@@ -244,8 +244,8 @@ thread looks every second whether it ended; quitting cancels the worker, so taf 
 than wait for the collect. The button reads "Collecting..." and is disabled until it ends; only
 a failure shows a message (its error), then the list reloads. After Collect, `#collected-at`
 says when the last collect ended, the timer's or the button's ("5 minutes ago",
-`view.last_collected` and `view.ago`: 5, 10, 30 seconds, then minute by minute up to the timer's 20
-minutes, `COLLECT_MINUTES`, then by 10 minutes, hours, days). It is redrawn every second and read
+`view.last_collected` and `view.ago`: 5, 10, 30 seconds, then minute by minute up to the timer's 5
+minutes, `COLLECT_MINUTES`, or 10, then by 10 minutes, hours, days). It is redrawn every second and read
 again every 15 seconds and after a collect; it is empty while the button's collect runs. Nothing in the TUI makes an item or changes its project: the collectors and `taf watch` do.
 Todos and watch items stay apart on purpose: todos have no project.
 

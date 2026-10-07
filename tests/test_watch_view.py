@@ -54,7 +54,8 @@ class CurrentTest(unittest.TestCase):
 
     def test_ago_and_the_last_collect(self) -> None:
         steps = [(0, "just now"), (7, "5 seconds ago"), (12, "10 seconds ago"), (45, "30 seconds ago"), (60, "1 minute ago"),
-                 (19 * 60, "19 minutes ago"), (20 * 60 + 59, "20 minutes ago"), (37 * 60, "30 minutes ago"),
+                 (5 * 60, "5 minutes ago"), (9 * 60 + 59, "9 minutes ago"), (10 * 60, "10 minutes ago"),
+                 (19 * 60, "10 minutes ago"), (37 * 60, "30 minutes ago"),
                  (3600, "1 hour ago"), (5 * 3600, "5 hours ago"), (86400, "1 day ago"), (3 * 86400, "3 days ago")]
         self.assertEqual([ago(seconds) for seconds, _ in steps], [label for _, label in steps])
         self.assertIsNone(last_collected(self.db))

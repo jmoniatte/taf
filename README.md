@@ -68,7 +68,7 @@ by themselves once the PR is merged, CI passes, you reply, or the review is done
 
 It needs `gh` logged in, and Claude Code logged into a claude.ai account with the Slack connector
 connected. Settings go in the `watch:` section of the config (`config.example.yml`). A systemd user
-timer, every 20 minutes during work hours:
+timer, every 5 minutes from 8:00 to 22:00 on weekdays:
 
 ```ini
 # ~/.config/systemd/user/taf-watch.service
@@ -80,8 +80,9 @@ TimeoutStartSec=20min
 
 # ~/.config/systemd/user/taf-watch.timer
 [Timer]
-OnCalendar=Mon..Fri *-*-* 07..18:00/20
-RandomizedDelaySec=60
+OnCalendar=Mon..Fri *-*-* 08..21:00/5
+OnCalendar=Mon..Fri *-*-* 22:00
+RandomizedDelaySec=30
 
 [Install]
 WantedBy=timers.target

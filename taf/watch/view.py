@@ -133,7 +133,7 @@ def grouped(items: list[WatchItem], ready: tuple[int, str] | None = None) -> lis
 
 
 # The timer's interval (taf-watch.timer): "N minutes ago" goes minute by minute up to it
-COLLECT_MINUTES = 20
+COLLECT_MINUTES = 5
 
 
 def last_collected(connection: sqlite3.Connection) -> datetime | None:
@@ -143,15 +143,15 @@ def last_collected(connection: sqlite3.Connection) -> datetime | None:
 
 
 def ago(seconds: float) -> str:
-    """5, 10 or 30 seconds ago, then each minute up to the timer's interval, then by 10 minutes,
-    then hours, then days."""
+    """5, 10 or 30 seconds ago, then each minute up to the timer's interval (or 10 minutes, so
+    tens follow), then by 10 minutes, then hours, then days."""
     if seconds < 5:
         return "just now"
     for limit, label in ((10, "5 seconds"), (30, "10 seconds"), (60, "30 seconds")):
         if seconds < limit:
             return f"{label} ago"
     minutes = int(seconds // 60)
-    if minutes <= COLLECT_MINUTES:
+    if minutes < 10 or minutes <= COLLECT_MINUTES:
         return "1 minute ago" if minutes == 1 else f"{minutes} minutes ago"
     if minutes < 60:
         return f"{minutes // 10 * 10} minutes ago"
