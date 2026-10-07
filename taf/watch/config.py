@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from ..config import CONFIG_FILE, DEFAULT_DATABASE
+from ..config import Config as TafConfig
 from ..config import load_config as load_taf_config
 
 
@@ -25,6 +26,9 @@ class GithubConfig:
     review_teams: list[str] = field(default_factory=list)
     # Accounts whose comments never need a reply, like bots without "[bot]" in their name
     ignore_users: list[str] = field(default_factory=list)
+    # The repo ("org/repo") whose open PRs with deploy_label the Watch tab counts; none when empty
+    deploy_repo: str = ""
+    deploy_label: str = "ready-for-deploy"
 
 
 @dataclass
@@ -39,7 +43,12 @@ class Config:
 
 def load_config(path: Path = CONFIG_FILE) -> Config:
     """taf's database and the watch: section; no section means defaults, a broken one raises ValueError."""
-    taf = load_taf_config(path)
+    return from_taf(load_taf_config(path))
+
+
+def from_taf(taf: TafConfig) -> Config:
+    """The watch settings in a taf config already read, as the app has it."""
+    path = taf.path
     data = taf.watch
     if not isinstance(data, Mapping):
         raise ValueError(f"{path}: watch must be a mapping of settings")
@@ -58,6 +67,8 @@ def load_config(path: Path = CONFIG_FILE) -> Config:
             github=GithubConfig(
                 review_teams=[str(t) for t in github.get("review_teams", [])],
                 ignore_users=[str(u) for u in github.get("ignore_users", [])],
+                deploy_repo=str(github.get("deploy_repo", "")),
+                deploy_label=str(github.get("deploy_label", GithubConfig.deploy_label)),
             ),
         )
     except (AttributeError, TypeError, ValueError) as error:

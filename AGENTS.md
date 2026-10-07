@@ -102,8 +102,8 @@ taf/                       # git root + pyproject.toml (run uv commands here)
 
 ## Layout
 
-The `#tabs` `TabbedContent` is the first row, one tab per entry in `TABS` (`app.py`): Notes,
-then Todos, then Watch, then Logs, then Stats; the app opens on Notes. Each pane is `<name>-tab` and holds its view, `<name>-view`. A click
+The `#tabs` `TabbedContent` is the first row, one tab per entry in `TABS` (`app.py`): Watch,
+then Todos, then Notes, then Logs, then Stats; the app opens on Watch. Each pane is `<name>-tab` and holds its view, `<name>-view`. A click
 on a tab or `tab` switches; `tab` is an app binding with `priority`, so the screen's own `tab`
 (focus next) never runs, and it is skipped while a panel or dialog is up. The tabs cannot take
 focus, so a view keeps its keys. `TafApp.tab` is the name of the tab on show. When a tab shows,
@@ -215,19 +215,34 @@ already in the search, or the Todos tab's list would take focus and the app woul
 
 ## Watch
 
-The Watch tab (`WatchTab`, `widgets/watch_tab.py`) lists the open watch items under a heading per
-project, the project with the latest activity first and "No project" last; inside one, pinned first,
+The Watch tab (`WatchTab`, `widgets/watch_tab.py`) lists the open watch items: first the review
+requests under a "Pull Requests" heading (`items.is_review`: GitHub items keyed `review:`, which have no
+project); after its count, "8 PRs ready to deploy" links to the open PRs of the config's
+`github.deploy_repo` with `deploy_label` on GitHub. The tab asks GitHub for that count in a thread
+(`github.ready_to_deploy`, `WatchView.ask_ready`) when it starts, every 5 minutes, on Refresh and
+after Collect; it is never stored, and the heading shows alone when there is no review but PRs are
+ready. Then comes a heading per project, the project with the latest activity first and "No project"
+last; inside one, pinned first,
 then the latest first (`watch.view.grouped`). It reuses `NotesTable` and `NoteDetail`: a
 `WatchItem` has what a todo has (`summary`, `content`, `pinned`, `done`, `updated_at`, which is
 when it happened), so the table and the view show it like one. The table has no cell padding of its
 own: each cell carries its spaces, so a heading starts at the row's left edge, cut where the columns
 meet (`NotesTable._heading`), and a blank row (`Spacer`) comes before each heading but the first.
 The cursor skips headings and blank rows. A row has no id (an item's id is another count than the
-todos'), and ends with its source, "slack" or "github", and its kind unless it is `action`; an fyi
-is gray. Keys: `x` done, `p` or space pin, `o` opens its link (Slack or GitHub), Enter shows it in
+todos'), and ends with Nerd Font icons that a click opens (`WatchItem.links`, `LINK_ICONS`): where
+it comes from in blue (Slack, GitHub, or a 7 in a circle, the user's sign, for one added by hand or
+by an agent); failing CI has two, its build (Jenkins, in red) then its PR (GitHub). There is no key to
+open a link. The full view writes each address out after its name (`LINK_NAMES`: "GitHub PR:
+<url>"), so it can be read and copied, and only the address is a link. Its kind is in the full view
+only, and an fyi is gray. Keys: `x` done, `p` or space pin, Enter shows it in
 full (`WatchDetail`, no Edit or Delete), `f` cycles Open, Done, All, `/` searches its words, `r`
 reloads, `y` copies; the list also reloads every minute (`RELOAD_SECONDS`), for what the timer
-adds. Nothing in the TUI makes an item or changes its project: the collectors and `taf watch` do.
+adds. `c`, or the footer's cyan Collect (after Refresh, only on Watch), runs `taf watch collect` in
+its own process and session (`WatchTab.collect`), as the timer does: its lock keeps the two apart,
+its prints go to temporary files, not pipes, and it finishes even when taf quits first. A worker
+thread looks every second whether it ended; quitting cancels the worker, so taf exits at once rather
+than wait for the collect. The button reads "Collecting..." and is disabled until it ends; its
+output, or its error, shows as a message, then the list reloads. Nothing in the TUI makes an item or changes its project: the collectors and `taf watch` do.
 Todos and watch items stay apart on purpose: todos have no project.
 
 `taf watch collect` (a timer runs it) reads GitHub, then Slack, into the `watch_` tables (migration
@@ -406,8 +421,9 @@ must be quoted when it has a tag: the shell reads an unquoted `#rails` as a comm
 (`#29 [ ] Mutual follows visibility #prompts #follows ★`). Any other first word writes a todo, so a
 todo starting with `list`, `show`, `done` or `reopen` must start differently.
 
-`taf watch` (or `taf watches`) is `watch/cli.py`, loaded only for it. Alone it lists every open item
-by project and when Slack was last read; its commands are `add`, `list`, `search`, `show`, `done`,
+`taf watch` (or `taf watches`) is `watch/cli.py`, loaded only for it. Alone it lists every open item,
+the reviews first (without the deploy count, which would mean a `gh` call), then by project, and
+when Slack was last read; its commands are `add`, `list`, `search`, `show`, `done`,
 `reopen`, `pin`, `unpin`, `context`, `collect`, `runs` and `project` (`link`, `unlink`, `assign`,
 `rename`, `merge`, `archive`, `activate`).
 

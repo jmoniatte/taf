@@ -6,9 +6,14 @@ from datetime import datetime
 
 from ..notes import split_query
 from . import items as stored
+from .items import REVIEWS, is_ci, is_review
 
 # The kind of item that only informs; shown gray
 FYI = "fyi"
+
+
+# What each of WatchItem.links is, in the full view
+LINK_NAMES = {"slack": "Slack conversation", "github": "GitHub PR", "jenkins": "Jenkins build", "added": "Link"}
 
 
 @dataclass(frozen=True, slots=True)
@@ -18,6 +23,7 @@ class WatchItem:
 
     id: int
     source: str
+    key: str
     item_kind: str
     title: str
     details: str
@@ -42,6 +48,18 @@ class WatchItem:
         return self.title
 
     @property
+    def is_review(self) -> bool:
+        return is_review(self.source, self.key)
+
+    @property
+    def links(self) -> list[tuple[str, str | None]]:
+        """What its row ends with, as (kind, url): failing CI links to the build (jenkins) and to the PR
+        (github); any other item to where it comes from (slack, github, or added by hand)."""
+        if is_ci(self.source, self.key):
+            return [("jenkins", self.url), ("github", self.key.removeprefix("ci:"))]
+        return [(self.source if self.source in ("slack", "github") else "added", self.url)]
+
+    @property
     def source_name(self) -> str:
         return {"github": "GitHub", "slack": "Slack"}.get(self.source, self.source)
 
@@ -52,8 +70,8 @@ class WatchItem:
         if self.details:
             lines += ["", self.details]
         facts = [f"{name}: {value}" for name, value in (("People", self.people), ("Due", self.due), ("Kind", self.item_kind)) if value]
-        if self.url:
-            facts.append(f"[Open in {self.source_name}]({self.url})")
+        # Each address written out, so it can be read and copied; only the address is a link
+        facts += [f"{LINK_NAMES[kind]}: [{url}]({url})" for kind, url in self.links if url]
         if facts:
             lines += ["", *(f"- {fact}" for fact in facts)]
         return "\n".join(lines)
@@ -61,14 +79,19 @@ class WatchItem:
 
 @dataclass(frozen=True, slots=True)
 class Group:
-    """A project's heading in the list; project None is for items with no project."""
+    """A project's heading in the list; project None is for items with no project, unless title
+    names the heading, as for the reviews."""
 
     project: str | None
     count: int
+    title: str | None = None
+    # After the count, as a link: "3 PRs ready to deploy"
+    note: str | None = None
+    note_link: str | None = None
 
     @property
     def name(self) -> str:
-        return self.project or "No project"
+        return self.title or self.project or "No project"
 
 
 def local(stamp: str | None) -> datetime | None:
@@ -86,16 +109,23 @@ def shown_items(connection: sqlite3.Connection, query: str = "", status: str = "
     return [_item(row) for row in rows]
 
 
-def grouped(items: list[WatchItem]) -> list[Group | WatchItem]:
-    """The items under a heading per project, the project with the latest activity first and those
-    with no project last; inside each, pinned first, then the latest first."""
+def grouped(items: list[WatchItem], ready: tuple[int, str] | None = None) -> list[Group | WatchItem]:
+    """The reviews first, under their own heading, then the items under a heading per project, the
+    project with the latest activity first and those with no project last; inside each, pinned first,
+    then the latest first. ready, how many PRs are ready to deploy and their list, follows the reviews'
+    count, a heading of its own when there is no review."""
     ordered = sorted(items, key=lambda item: (not item.pinned, -item.updated_at.timestamp()))
+    reviews = [item for item in ordered if item.is_review]
+    rows: list[Group | WatchItem] = []
+    if reviews or (ready and ready[0]):
+        note, link = (f"{ready[0]} {'PR' if ready[0] == 1 else 'PRs'} ready to deploy", ready[1]) if ready else (None, None)
+        rows = [Group(None, len(reviews), REVIEWS, note, link), *reviews]
+    ordered = [item for item in ordered if not item.is_review]
     groups: dict[str | None, list[WatchItem]] = {}
     for item in sorted(ordered, key=lambda item: -item.updated_at.timestamp()):
         groups.setdefault(item.project, [])
     for item in ordered:
         groups[item.project].append(item)
-    rows: list[Group | WatchItem] = []
     for project in sorted(groups, key=lambda name: name is None):
         rows.append(Group(project, len(groups[project])))
         rows.extend(groups[project])
@@ -122,6 +152,7 @@ def _item(row: sqlite3.Row) -> WatchItem:
     return WatchItem(
         id=row["id"],
         source=row["source"],
+        key=row["key"],
         item_kind=row["kind"],
         title=row["summary"],
         details=row["details"],

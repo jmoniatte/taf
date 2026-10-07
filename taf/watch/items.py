@@ -6,6 +6,8 @@ from datetime import datetime
 
 KINDS = ("action", "question", "decision", "fyi")
 STATUSES = ("open", "done")
+# Review requests have no project: they are listed first, under their own heading
+REVIEWS = "Pull Requests"
 # Items with their project's name, and open or done from done_at, as the command line and agents see them
 SELECT_ITEMS = (
     "SELECT i.*, p.name AS project, CASE WHEN i.done_at IS NULL THEN 'open' ELSE 'done' END AS status "
@@ -13,6 +15,16 @@ SELECT_ITEMS = (
 )
 # An item names its project; the tables hold its id
 PROJECT_ID = "(SELECT id FROM watch_projects WHERE name = :project)"
+
+
+def is_ci(source: str, key: str) -> bool:
+    """Failing checks on one of the user's PRs (github.ci_item): its url is the build, its key the PR's."""
+    return source == "github" and key.startswith("ci:")
+
+
+def is_review(source: str, key: str) -> bool:
+    """A PR waiting on the user's review (github.review_requests)."""
+    return source == "github" and key.startswith("review:")
 
 
 def now() -> str:

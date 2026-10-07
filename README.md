@@ -36,7 +36,7 @@ A message takes `@30m`, `@1h` or `@1h45` for the time spent, `@context` and `+ac
 or context it does not give comes from the rules in `~/.config/taf/config.yml`
 (`config.example.yml` shows them). `taf log --help` lists it all.
 
-`tab` switches between the Notes, Todos, Watch, Logs and Stats tabs. `?` lists every shortcut, `t` changes
+`tab` switches between the Watch, Todos, Notes, Logs and Stats tabs (the app opens on Watch). `?` lists every shortcut, `t` changes
 the theme and `q` quits.
 
 - **Todos**: `n` writes a new todo, Enter shows one (Escape goes back), `e` edits it in `$EDITOR`
@@ -44,10 +44,13 @@ the theme and `q` quits.
   todos (`is:open` or `is:done` in the search), `/` searches, and `#tag` in a todo's text makes a
   tag to filter on.
 - **Notes**: the same as todos, without done. A search can hold several tags.
-- **Watch**: what needs you, under a heading per project: Slack threads, replies on your pull
-  requests, failing CI, reviews waiting on you, and items agents added. `x` closes one, `p` or
-  space stars it, `o` opens it in Slack or GitHub, Enter shows it in full, `f` shows open, done or
-  all. The list reloads every minute.
+- **Watch**: what needs you. The pull requests waiting on your review come first, under Pull
+  Requests, with how many PRs are ready to deploy (`deploy_repo` in the config) as a link; the
+  rest is under a heading per project: Slack threads, replies on your pull requests, failing CI,
+  and items agents added. `x` closes one, `p` or
+  space stars it, a click on its icon opens it in Slack or GitHub (failing CI has two: the build and the PR), Enter shows it in full, `f` shows open, done or
+  all. The list reloads every minute. `c`, or the Collect button, collects now, as the timer does
+  (GitHub, then Slack, a paid Claude run).
 - **Logs**: one week at a time, the last day first. `[` and `]` go to the previous and next week,
   `n` logs a new message, and `e` or a click on a day's date edits that day in `$EDITOR`. `j` and
   `k` scroll; select text with the mouse and press `y` to copy it.

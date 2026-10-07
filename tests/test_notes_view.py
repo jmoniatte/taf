@@ -4,6 +4,7 @@ import shlex
 import sys
 import tempfile
 import unittest
+import unittest.mock
 from pathlib import Path
 from unittest.mock import patch
 
@@ -86,7 +87,7 @@ class WatchTabTest(AppCase):
             lines = ["".join(str(cell) for cell in table.get_row_at(row)).rstrip() for row in range(table.row_count)]
             # A heading per project from the left edge, a blank row between them; no id for an item
             self.assertEqual(lines, [
-                " follow (1)", "    \U000f0131  ☆  Answer Kevin  slack", "", " No project (1)", "    \U000f0131  ☆  CI fails on r#1  github",
+                " follow (1)", "    \U000f0131  ☆  Answer Kevin  \U000f04b1", "", " No project (1)", "    \U000f0131  ☆  CI fails on r#1  \uf2ec  \U000f02a4",
             ])
             self.assertEqual(str(tab.query_one("#notes-status", Static).render()), "2 open items")
             # The cursor starts on an item, never a heading; j skips the blank row and the heading
@@ -97,9 +98,11 @@ class WatchTabTest(AppCase):
             await pilot.pause()
             kevin = get_item(self.db, 1)
             self.assertEqual((kevin["status"], kevin["pinned"]), ("done", 1))
-            with patch.object(app, "open_url") as opened:
-                await pilot.press("o")
-            opened.assert_called_once_with("https://slack/1")
+            # Each icon links to its own page, a click opening it: failing CI's build in red, its PR in blue
+            links = [[(span.style.link, span.style.color.name) for span in table.get_row_at(row)[2].spans if span.style.link]
+                     for row in (1, 4)]
+            palette = app.palette
+            self.assertEqual(links, [[("https://slack/1", palette["blue"])], [("https://ci/1", palette["red"]), ("u/1", palette["blue"])]])
             # Done ones leave the open list on the next load; f shows them
             await pilot.press("r")
             await pilot.pause()
@@ -121,6 +124,67 @@ class WatchTabTest(AppCase):
             await pilot.press("escape")
             await pilot.pause()
             self.assertFalse(detail.display)
+
+        self.run_app(body)
+
+    def test_the_pull_requests_heading_links_to_those_ready_to_deploy(self) -> None:
+        async def body(app, pilot) -> None:
+            save_item(self.db, Item("github", "review:u/9", "action", "Review r#9", url="u/9"))
+            view = app.query_one("#watch-view").list
+            # As GitHub answered: the tab asks it in a thread, only with deploy_repo in the config
+            view._ready_known((8, "https://gh/ready"))
+            await pilot.pause()
+            table = view.table
+            heading = "".join(str(cell) for cell in table.get_row_at(0))
+            self.assertEqual(heading.rstrip(), " Pull Requests (1) - 8 PRs ready to deploy")
+            x = heading.index("8 PRs")
+            with patch.object(app, "open_url") as opened:
+                await pilot.click("#watch-view #notes-table", offset=(x, 0))
+                await pilot.pause()
+            opened.assert_called_once_with("https://gh/ready")
+            self.assertEqual(table.cursor_row, 1)
+
+        self.run_app(body)
+
+    def test_collect_runs_taf_watch_collect_in_the_background(self) -> None:
+        def fake_popen(code: int, out: str, err: str):
+            """A collect that is over at once, having printed out and err into the files it was given."""
+            started = []
+
+            def popen(command, stdout, stderr, **kwargs):
+                started.append((command, kwargs))
+                stdout.write(out)
+                stderr.write(err)
+                return unittest.mock.Mock(poll=lambda: code)
+
+            popen.started = started
+            return popen
+
+        async def body(app, pilot) -> None:
+            button = app.query_one("#btn-collect")
+            self.assertTrue(button.display)
+            popen = fake_popen(0, "github: 3 open PRs, 1 new items\nslack: 2 items", "")
+            with patch("taf.widgets.watch_tab.subprocess.Popen", popen):
+                await pilot.click("#btn-collect")
+                await app.workers.wait_for_complete()
+                await pilot.pause()
+            [(command, kwargs)] = popen.started
+            # Apart from taf: its own session, so quitting taf does not stop it
+            self.assertEqual((command[1:], kwargs["start_new_session"]), (["-m", "taf", "watch", "collect"], True))
+            self.assertEqual((button.disabled, str(button.label)), (False, "Collect"))
+            self.assertIn("slack: 2 items", str(app.query_one("FooterMessage").render()))
+            # c does the same; a failure says why
+            popen = fake_popen(1, "", "taf watch: another collect is running")
+            with patch("taf.widgets.watch_tab.subprocess.Popen", popen):
+                await pilot.press("c")
+                await app.workers.wait_for_complete()
+                await pilot.pause()
+            self.assertEqual(len(popen.started), 1)
+            self.assertIn("another collect is running", str(app.query_one("FooterMessage").render()))
+            # Only on Watch
+            await pilot.press("tab")
+            await pilot.pause()
+            self.assertFalse(button.display)
 
         self.run_app(body)
 
@@ -258,7 +322,7 @@ class TodosViewTest(AppCase):
             await pilot.press("escape")
             await pilot.pause()
             self.assertTrue(refresh.display)
-            # On Watch's list and the logs too, not on the stats
+            # On the notes' list and the logs too, not on the stats
             await pilot.press("tab")
             await pilot.pause()
             self.assertTrue(refresh.display)

@@ -16,7 +16,7 @@ from . import github, slack
 from .config import Config, load_config
 from ..database import open_database
 from .items import (
-    KINDS, STATUSES, Item, get_item, list_items, now, recent_runs, record_run, save_item, set_done, set_pinned,
+    KINDS, REVIEWS, STATUSES, Item, is_review, get_item, list_items, now, recent_runs, record_run, save_item, set_done, set_pinned,
     set_project,
 )
 from .projects import (
@@ -303,9 +303,15 @@ def print_projects(db: sqlite3.Connection, args) -> int:
 
 def cmd_status_overview(db: sqlite3.Connection, config: Config, args) -> int:
     rows = list_items(db)
+    reviews = [row for row in rows if is_review(row["source"], row["key"])]
+    if reviews:
+        print(f"{REVIEWS} ({len(reviews)})")
+        for row in reviews:
+            print("  " + line(row, with_project=False))
     groups: dict[str | None, list[sqlite3.Row]] = {}
     for row in rows:
-        groups.setdefault(row["project"], []).append(row)
+        if not is_review(row["source"], row["key"]):
+            groups.setdefault(row["project"], []).append(row)
     for project in sorted(groups, key=lambda p: (p is None, -len(groups[p]), p or "")):
         print(f"{project or 'No project'} ({len(groups[project])})")
         for row in groups[project]:

@@ -18,7 +18,7 @@ from taf.logs import create_log
 from taf.message import Inference
 from taf.notes import TODO, create_note
 from taf.widgets.stats_view import ALL_ACTIONS
-from taf.widgets import WatchTab, LogsScroll, LogsView, NotesTab, NotesTable, StatsScroll, StatsView, TodosTab
+from taf.widgets import WatchTab, LogsScroll, LogsView, NotesTable, StatsScroll, StatsView, TodosTab
 from taf.widgets.logs_view import HINT, NewLogScreen
 from test_notes_view import python_editor, suspend, writes
 
@@ -76,27 +76,27 @@ class AppTest(unittest.TestCase):
             # No title bar
             self.assertFalse(app.query("#app-header"))
             self.assertEqual(tabs.region.y, 0)
-            self.assertEqual([str(tabs.get_tab(f"{name}-tab").label) for name in TABS], ["Notes", "Todos", "Watch", "Logs", "Stats"])
-            self.assertEqual((app.tab, tabs.active), ("notes", "notes-tab"))
+            self.assertEqual([str(tabs.get_tab(f"{name}-tab").label) for name in TABS], ["Watch", "Todos", "Notes", "Logs", "Stats"])
+            self.assertEqual((app.tab, tabs.active), ("watch", "watch-tab"))
             self.assertFalse(app.tabs.can_focus)
             # The list takes focus for its keys
-            self.assertIsInstance(app.focused, NotesTable)
+            self.assertIsInstance(app.focused.parent.parent, WatchTab)
             await pilot.press("tab")
             await pilot.pause()
             self.assertEqual((app.tab, tabs.active), ("todos", "todos-tab"))
             self.assertIsInstance(app.focused.parent.parent, TodosTab)
             await pilot.press("tab")
             await pilot.pause()
-            self.assertEqual((app.tab, tabs.active), ("watch", "watch-tab"))
-            self.assertIsInstance(app.focused.parent.parent, WatchTab)
+            self.assertEqual((app.tab, tabs.active), ("notes", "notes-tab"))
+            self.assertIsInstance(app.focused, NotesTable)
             await pilot.press("tab")
             await pilot.pause()
             self.assertEqual((app.tab, tabs.active), ("logs", "logs-tab"))
             self.assertIsInstance(app.focused, LogsScroll)
             await pilot.press("tab", "tab")
             await pilot.pause()
-            self.assertEqual(app.tab, "notes")
-            self.assertIsInstance(app.focused.parent.parent, NotesTab)
+            self.assertEqual(app.tab, "watch")
+            self.assertIsInstance(app.focused.parent.parent, WatchTab)
 
         self.run_app(body)
 
@@ -409,9 +409,9 @@ class AppTest(unittest.TestCase):
 
         async def body(app, pilot) -> None:
             general = ["?", "t", "y", "tab", "q"]
-            # Notes have no status: no x, no f
             self.assertEqual(
-                await help_keys(app, pilot), {"GENERAL": general, "NOTES": ["n", "e", "⇧+enter", "p", "space", "/", "#", "r", "y", "enter", "j", "k"]}
+                await help_keys(app, pilot),
+                {"GENERAL": general, "WATCH": ["x", "p", "space", "f", "/", "r", "y", "c", "enter", "j", "k"]},
             )
             await pilot.press("tab")
             await pilot.pause()
@@ -429,9 +429,9 @@ class AppTest(unittest.TestCase):
             self.assertEqual(await help_keys(app, pilot), {"GENERAL": general, "TODO": ["escape", "e", "⇧+enter", "y", "j", "k"]})
             await pilot.press("tab")
             await pilot.pause()
+            # Notes have no status: no x, no f
             self.assertEqual(
-                await help_keys(app, pilot),
-                {"GENERAL": general, "WATCH": ["x", "p", "space", "o", "f", "/", "r", "y", "enter", "j", "k"]},
+                await help_keys(app, pilot), {"GENERAL": general, "NOTES": ["n", "e", "⇧+enter", "p", "space", "/", "#", "r", "y", "enter", "j", "k"]}
             )
             await pilot.press("tab")
             await pilot.pause()

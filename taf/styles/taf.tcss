@@ -405,6 +405,12 @@ TafHelpScreen #shortcuts-general {
     margin: 0 0 0 1;
 }
 
+/* Only on Watch (TafApp.refresh_footer) */
+#btn-collect {
+    display: none;
+    margin: 0 0 0 1;
+}
+
 /* Help on the right; a message in its place while one shows (FooterMessage), right-aligned over
    the room left of it, an error still on up to three lines */
 #btn-help {

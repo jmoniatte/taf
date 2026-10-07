@@ -36,6 +36,8 @@ class ConfigTest(Case):
         # The database is taf's
         self.assertEqual(config.database_path, Path("~/x.sqlite3").expanduser())
         self.assertEqual(load_config(self.tmp / "missing.yml"), Config())
+        path.write_text("watch:\n  github:\n    deploy_repo: org/app\n")
+        self.assertEqual((load_config(path).github.deploy_repo, load_config(path).github.deploy_label), ("org/app", "ready-for-deploy"))
         path.write_text("watch:\n  slack: nope\n")
         with self.assertRaises(ValueError):
             load_config(path)
@@ -201,6 +203,22 @@ def item(**overrides):
             "project": "rwgps", "url": None, "due": None, "happened_at": None, "resolved": False, **overrides}
 
 
+class ReadyToDeployTest(unittest.TestCase):
+    def test_counts_the_labelled_prs_live(self):
+        asked = []
+
+        def gh(args):
+            asked.append(args)
+            return [{"number": 1}, {"number": 2}]
+
+        self.assertIsNone(github.ready_to_deploy(GithubConfig(), run=gh))
+        self.assertEqual(asked, [])
+        count, url = github.ready_to_deploy(GithubConfig(deploy_repo="org/app"), run=gh)
+        self.assertEqual((count, url), (2, "https://github.com/org/app/pulls?q=is%3Aopen+is%3Apr+label%3Aready-for-deploy"))
+        self.assertEqual(asked[0][asked[0].index("--label") + 1], "ready-for-deploy")
+        self.assertIsNone(github.ready_to_deploy(GithubConfig(deploy_repo="org/app"), run=lambda a: (_ for _ in ()).throw(RuntimeError("x"))))
+
+
 class SlackTest(Case):
     def test_collect_saves_items_and_moves_cursor(self):
         run = fake_run({"items": [item(), item(key="C2:1", project="unknown"), item(kind="bogus"),
@@ -342,6 +360,10 @@ class CliTest(Case):
         self.assertEqual(self.run_cli("done", "1", "2", "3")[0], 0)
         self.assertEqual(self.run_cli("list", "--all")[1], "")
         self.assertIn("#1 DONE action", self.run_cli("search", "review")[1])
+        # Review requests come first, under their own heading
+        save_item(self.db, Item("github", "review:u/9", "action", "Review r#9"))
+        save_item(self.db, Item("slack", "C2:1", "action", "Answer Pat"))
+        self.assertEqual(self.run_cli()[1], "Pull Requests (1)\n  #4 action Review r#9\nNo project (1)\n  #5 action Answer Pat\n")
 
 
 class ImportTest(unittest.TestCase):

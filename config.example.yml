@@ -40,3 +40,5 @@ watch:
   github:
     review_teams: []             # review requests to these teams count as yours ("org/team")
     ignore_users: []             # comments from these accounts never need a reply
+    deploy_repo: ''              # 'org/repo': the Watch tab counts its open PRs with deploy_label
+    deploy_label: ready-for-deploy

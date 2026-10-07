@@ -2,14 +2,21 @@
 one in full in place of the list. The collectors write them; nothing here makes or edits one."""
 
 import sqlite3
+import subprocess
+import sys
+import tempfile
+import time
 
 from textual import on
+from textual.worker import get_current_worker
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
 from textual.widgets import DataTable, Input, Select, Static
 from tui_kit.shortcuts import ACTIONS, GENERAL
 
+from ..watch.config import from_taf
+from ..watch.github import ready_to_deploy
 from ..watch.view import WatchItem, get_item, grouped, set_done, set_pinned, shown_items
 from ..notes import DEFAULT_STATUS, STATUS_WORD, STATUSES, TODO, split_status
 from .dashed_rule import DashedRule
@@ -19,6 +26,8 @@ from .notes_view import NoteOpened
 
 # How often the list reads again what the watch timer may have added
 RELOAD_SECONDS = 60
+# How often GitHub is asked how many PRs are ready to deploy
+DEPLOY_SECONDS = 5 * 60
 
 
 class WatchView(Vertical):
@@ -28,11 +37,11 @@ class WatchView(Vertical):
         Binding("x", "toggle_done", "Mark done, or not done", group=ACTIONS),
         Binding("p", "toggle_pin", "Pin, or unpin", group=ACTIONS),
         Binding("space", "toggle_pin", "Pin, or unpin", group=ACTIONS),
-        Binding("o", "open_link", "Open in Slack or GitHub", group=ACTIONS),
         Binding("f", "next_status", "Show open, done or all", group=ACTIONS),
         Binding("slash", "search", "Search", key_display="/", group=ACTIONS),
         Binding("r", "refresh", "Refresh", group=ACTIONS),
         Binding("y", "copy", "Copy the item", group=ACTIONS),
+        Binding("c", "collect", "Collect now: GitHub, then Slack (a paid run)", group=ACTIONS),
     ]
 
     def __init__(self, **kwargs) -> None:
@@ -40,6 +49,8 @@ class WatchView(Vertical):
         self.status = DEFAULT_STATUS
         # The search box's text, is:open or is:done included: the dropdown only mirrors it
         self.query_text = f"is:{DEFAULT_STATUS}"
+        # How many PRs are ready to deploy and their list on GitHub, once GitHub said
+        self.ready: tuple[int, str] | None = None
 
     def compose(self) -> ComposeResult:
         with Horizontal(id="notes-controls"):
@@ -52,6 +63,8 @@ class WatchView(Vertical):
     def on_mount(self) -> None:
         self.call_after_refresh(self.load)
         self.set_interval(RELOAD_SECONDS, self._reload_quietly)
+        self.ask_ready()
+        self.set_interval(DEPLOY_SECONDS, self.ask_ready)
 
     @property
     def table(self) -> NotesTable:
@@ -67,7 +80,8 @@ class WatchView(Vertical):
     def _colors(self) -> ListColors:
         palette = self.app.palette
         return ListColors(
-            date=palette["comment"], link=palette["blue"], heading=palette["yellow"], tag=palette["purple"], code=palette["orange"], extra_tag=palette["cyan"]
+            date=palette["comment"], link=palette["blue"], heading=palette["yellow"], tag=palette["purple"], code=palette["orange"],
+            extra_tag=palette["cyan"], failure=palette["red"],
         )
 
     # -- loading
@@ -83,10 +97,29 @@ class WatchView(Vertical):
             self._set_count(self.app.database_error)
             return
         items = shown_items(self.database, words, self.status)
-        self.table.show(grouped(items))
+        self.table.show(grouped(items, self.ready))
         status = "" if self.status == "all" else f" {self.status}"
         text = f"{len(items)}{status} {'item' if len(items) == 1 else 'items'}"
         self._set_count(f"{text} matching '{words}'" if words else text)
+
+    def ask_ready(self) -> None:
+        """Ask GitHub, in a thread, how many PRs are ready to deploy; a second or so, so never in the way."""
+        try:
+            github = from_taf(self.app.config).github
+        except ValueError:
+            return
+        if github.deploy_repo:
+            self.run_worker(lambda: self._ready(github), thread=True, group="ready", exclusive=True)
+
+    def _ready(self, github) -> None:
+        ready = ready_to_deploy(github)
+        if ready is not None:
+            self.app.call_from_thread(self._ready_known, ready)
+
+    def _ready_known(self, ready: tuple[int, str]) -> None:
+        if ready != self.ready:
+            self.ready = ready
+            self.load()
 
     def _reload_quietly(self) -> None:
         """Read again what the watch timer may have added, unless the search is being typed."""
@@ -98,6 +131,7 @@ class WatchView(Vertical):
 
     def action_refresh(self) -> None:
         self.load()
+        self.ask_ready()
 
     # -- searching
 
@@ -163,9 +197,8 @@ class WatchView(Vertical):
             self.table.replace(item)
         return item
 
-    def action_open_link(self) -> None:
-        if (item := self.table.selected()) is not None and item.url:
-            self.app.open_url(item.url)
+    def action_collect(self) -> None:
+        self.app.query_one(WatchTab).collect()
 
     def action_copy(self) -> None:
         if (item := self.table.selected()) is not None:
@@ -187,7 +220,6 @@ class WatchDetail(NoteDetail):
     BINDINGS = [
         Binding("escape", "close", "Back to the list", group=ACTIONS),
         Binding("q", "close", "Back to the list", show=False),
-        Binding("o", "open_link", "Open in Slack or GitHub", group=ACTIONS),
         Binding("y", "copy", "Copy the selection, or the item", group=ACTIONS),
         Binding("j", "scroll_down", "Scroll down", show=False, group=GENERAL),
         Binding("k", "scroll_up", "Scroll up", show=False, group=GENERAL),
@@ -200,9 +232,6 @@ class WatchDetail(NoteDetail):
     def action_edit(self) -> None:
         """Nothing: Slack or GitHub is where an item changes."""
 
-    def action_open_link(self) -> None:
-        if self.note is not None and self.note.url:
-            self.app.open_url(self.note.url)
 
 
 class WatchTab(Vertical):
@@ -212,6 +241,7 @@ class WatchTab(Vertical):
         super().__init__(**kwargs)
         # The item on show, or None while the list is
         self.viewing: WatchItem | None = None
+        self.collecting = False
 
     def compose(self) -> ComposeResult:
         # The Notes and Todos tabs' ids, for their styles
@@ -244,7 +274,58 @@ class WatchTab(Vertical):
 
     def reload(self) -> None:
         """The footer's Refresh."""
-        self.list.load()
+        self.list.action_refresh()
+
+    # -- collecting now, as the timer does
+
+    def collect(self) -> None:
+        """Run `taf watch collect`: GitHub, then Slack, which takes a minute or more and costs a Claude
+        run. Its own process, as the timer's: its lock keeps the two apart, its prints stay out of the
+        screen, and it finishes even when taf quits first (then only its desktop notification tells)."""
+        if self.collecting:
+            return
+        self.collecting = True
+        button = self.app.query_one("#btn-collect")
+        button.disabled = True
+        button.label = "Collecting..."
+        self.notify("Collecting from GitHub, then Slack")
+        self.run_worker(self._collect, thread=True, group="collect")
+
+    def _collect(self) -> None:
+        """In a worker thread: start the collect apart from taf, then look every second whether it
+        ended. Quitting taf cancels the worker, which stops looking; Python would otherwise wait for
+        this thread, and the terminal for the collect, before exiting."""
+        worker = get_current_worker()
+        command = [sys.executable, "-m", "taf", "watch", "collect"]
+        # Files, not pipes: once taf is gone, a pipe nobody reads would break the collect's prints
+        with tempfile.TemporaryFile("w+") as out, tempfile.TemporaryFile("w+") as err:
+            try:
+                # Its own session: quitting taf or closing the terminal does not stop it
+                process = subprocess.Popen(
+                    command, stdin=subprocess.DEVNULL, stdout=out, stderr=err, text=True, start_new_session=True
+                )
+            except OSError as error:
+                self.app.call_from_thread(self._collected, 1, "", str(error))
+                return
+            while (code := process.poll()) is None:
+                if worker.is_cancelled:
+                    return
+                time.sleep(1)
+            out.seek(0)
+            err.seek(0)
+            result = (code, out.read().strip(), err.read().strip())
+        self.app.call_from_thread(self._collected, *result)
+
+    def _collected(self, code: int, out: str, err: str) -> None:
+        self.collecting = False
+        button = self.app.query_one("#btn-collect")
+        button.disabled = False
+        button.label = "Collect"
+        if code == 0:
+            self.notify(out or "Collected")
+        else:
+            self.notify("\n".join(part for part in (out, err) if part) or "Collect failed", severity="error", timeout=10)
+        self.list.action_refresh()
 
     def show_list(self) -> None:
         self.viewing = None

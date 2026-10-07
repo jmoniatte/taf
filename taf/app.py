@@ -25,9 +25,9 @@ STYLES_DIR = Path(__file__).parent / "styles"
 STYLE_FILES = (*tui_kit.STYLE_FILES, STYLES_DIR / "taf.tcss")
 # Each tab by name, with its label and view; the first one opens first
 TABS = {
-    "notes": ("Notes", NotesTab),
-    "todos": ("Todos", TodosTab),
     "watch": ("Watch", WatchTab),
+    "todos": ("Todos", TodosTab),
+    "notes": ("Notes", NotesTab),
     "logs": ("Logs", LogsView),
     "stats": ("Stats", StatsView),
 }
@@ -101,6 +101,8 @@ class TafApp(BaseApp):
             yield flat_button("Exit", "btn-exit", classes="tinted -red")
             # Only on a list of notes or todos and on the logs, like the Refresh under yafyaf-tui's list
             yield flat_button("Refresh", "btn-refresh", classes="tinted -green")
+            # Only on Watch: runs taf watch collect now, as the timer does
+            yield flat_button("Collect", "btn-collect", classes="tinted -cyan")
             yield flat_button("Help", "btn-help")
             yield FooterMessage()
 
@@ -123,6 +125,11 @@ class TafApp(BaseApp):
         """The view of the tab on show."""
         return self.query_one("#tabs", TabbedContent).active_pane.children[0]
 
+    @on(Button.Pressed, "#btn-collect")
+    def _collect(self, event: Button.Pressed) -> None:
+        event.stop()
+        self.query_one(WatchTab).collect()
+
     @on(Button.Pressed, "#btn-refresh")
     def _refresh(self, event: Button.Pressed) -> None:
         event.stop()
@@ -134,6 +141,7 @@ class TafApp(BaseApp):
         viewing = getattr(view, "viewing", None) is not None
         listed = isinstance(view, (NotesTab, WatchTab)) and not viewing
         self.query_one("#btn-refresh").display = isinstance(view, LogsView) or listed
+        self.query_one("#btn-collect").display = isinstance(view, WatchTab)
 
     def on_mount(self) -> None:
         # The view keeps focus for its keys; tabs switch by click or with tab

@@ -3,6 +3,7 @@
 import json
 import sqlite3
 import subprocess
+import urllib.parse
 from dataclasses import dataclass, field
 from datetime import datetime
 
@@ -118,6 +119,20 @@ def track(db: sqlite3.Connection, item: Item) -> bool:
         db.execute("UPDATE watch_items SET done_at = NULL WHERE source = ? AND key = ?", (SOURCE, item.key))
         return True
     return False
+
+
+def ready_to_deploy(config: GithubConfig, run=gh) -> tuple[int, str] | None:
+    """How many open PRs of deploy_repo have deploy_label, and their list on GitHub; None when no
+    repo is set or gh fails. Asked live by the Watch tab, never stored."""
+    if not config.deploy_repo:
+        return None
+    try:
+        found = run(["gh", "pr", "list", "--repo", config.deploy_repo, "--label", config.deploy_label,
+                     "--state", "open", "--limit", "500", "--json", "number"])
+    except (RuntimeError, OSError, subprocess.TimeoutExpired, json.JSONDecodeError):
+        return None
+    query = urllib.parse.quote_plus(f"is:open is:pr label:{config.deploy_label}")
+    return len(found), f"https://github.com/{config.deploy_repo}/pulls?q={query}"
 
 
 def review_requests(run, teams: list[str]) -> list[Item]:

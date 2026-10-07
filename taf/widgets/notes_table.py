@@ -18,6 +18,10 @@ from ..notes import TODO, Note, find_tags
 # What a row of the table can show: the Watch tab's items look like todos
 Entry = Note | WatchItem
 
+# The links a watch item's row ends with, each a Nerd Font icon a click opens: nf-md-slack,
+# nf-md-github, nf-fa-jenkins (failing CI's build, in red), and nf-md-numeric_7_circle for one the
+# user or an agent added (7 is how the user signs)
+LINK_ICONS = {"slack": "\U000f04b1", "github": "\U000f02a4", "jenkins": "\uf2ec", "added": "\U000f0cac"}
 # Nerd Font check boxes (nf-md-checkbox_blank_outline, nf-md-checkbox_marked), as outils uses Nerd Font icons
 OPEN = "\U000f0131"
 DONE = "\U000f0132"
@@ -41,6 +45,8 @@ class ListColors:
     code: str = ""
     # The note's tags shown after its text
     extra_tag: str = ""
+    # A watch item's failing CI icon
+    failure: str = ""
 
 
 class NoteChangeRequested(Message):
@@ -195,12 +201,15 @@ class NotesTable(DataTable):
         return Text(f" {shown_id:>{self._id_digits}} "), self._lead(note), self._summary(note)
 
     def _heading(self, group: Group) -> tuple[Text, Text, Text]:
-        """The project's name and count from the row's left edge, cut where the columns meet."""
-        label = f" {group.name} ({group.count})"
-        style = Style(color=self._colors.heading or None, bold=True)
+        """The project's name and count from the row's left edge, then its note, a link, cut where the
+        columns meet."""
+        label = Text(f" {group.name} ({group.count})", style=Style(color=self._colors.heading or None, bold=True))
+        if group.note:
+            label.append(" - ")
+            label.append(group.note, style=Style(color=self._colors.link or None, link=group.note_link))
         id_end = self.columns["id"].width
         lead_end = id_end + self.columns["lead"].width
-        return Text(label[:id_end], style=style), Text(label[id_end:lead_end], style=style), Text(label[lead_end:], style=style)
+        return label[:id_end], label[id_end:lead_end], label[lead_end:]
 
     def _step_off_headings(self, step: int) -> None:
         """Move the cursor from a heading or a blank row to the next entry that way, else the other way."""
@@ -254,8 +263,10 @@ class NotesTable(DataTable):
         if isinstance(note, WatchItem):
             # An fyi only informs: gray, like a done one
             text = summary_text(note.summary, self._colors, done=note.done or note.item_kind == FYI)
-            kind = "" if note.item_kind == "action" else f" {note.item_kind}"
-            text.append(f"  {note.source}{kind}", style=Style(color=self._colors.date or None))
+            for kind, url in note.links:
+                color = self._colors.failure if kind == "jenkins" else self._colors.link
+                text.append(" ")
+                text.append(f" {LINK_ICONS[kind]}", style=Style(color=color or None, link=url))
         else:
             text = summary_text(note.summary, self._colors, done=note.done, tags=note.tags)
         return Text(" ") + text
@@ -281,6 +292,9 @@ class NotesTable(DataTable):
         event.stop()
         note = self.notes[row]
         if isinstance(note, (Group, Spacer)):
+            # A heading's note may be a link
+            if event.style.link:
+                self.app.open_url(event.style.link)
             return
         self.move_cursor(row=row)
         if event.style.meta.get("column") == 1:
