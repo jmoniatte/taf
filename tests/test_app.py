@@ -18,7 +18,7 @@ from taf.logs import create_log
 from taf.message import Inference
 from taf.notes import TODO, create_note
 from taf.widgets.stats_view import ALL_ACTIONS
-from taf.widgets import LogsScroll, LogsView, NotesTab, NotesTable, StatsScroll, StatsView, TodosTab
+from taf.widgets import CurrentTab, LogsScroll, LogsView, NotesTab, NotesTable, StatsScroll, StatsView, TodosTab
 from taf.widgets.logs_view import HINT, NewLogScreen
 from test_notes_view import python_editor, suspend, writes
 
@@ -76,7 +76,7 @@ class AppTest(unittest.TestCase):
             # No title bar
             self.assertFalse(app.query("#app-header"))
             self.assertEqual(tabs.region.y, 0)
-            self.assertEqual([str(tabs.get_tab(f"{name}-tab").label) for name in TABS], ["Notes", "Todos", "Logs", "Stats"])
+            self.assertEqual([str(tabs.get_tab(f"{name}-tab").label) for name in TABS], ["Notes", "Todos", "Current", "Logs", "Stats"])
             self.assertEqual((app.tab, tabs.active), ("notes", "notes-tab"))
             self.assertFalse(app.tabs.can_focus)
             # The list takes focus for its keys
@@ -85,6 +85,10 @@ class AppTest(unittest.TestCase):
             await pilot.pause()
             self.assertEqual((app.tab, tabs.active), ("todos", "todos-tab"))
             self.assertIsInstance(app.focused.parent.parent, TodosTab)
+            await pilot.press("tab")
+            await pilot.pause()
+            self.assertEqual((app.tab, tabs.active), ("current", "current-tab"))
+            self.assertIsInstance(app.focused.parent.parent, CurrentTab)
             await pilot.press("tab")
             await pilot.pause()
             self.assertEqual((app.tab, tabs.active), ("logs", "logs-tab"))
@@ -98,7 +102,7 @@ class AppTest(unittest.TestCase):
 
     def test_logs_show_by_day_like_the_ruby_fini(self) -> None:
         async def body(app, pilot) -> None:
-            await pilot.press("tab", "tab")
+            await pilot.press("tab", "tab", "tab")
             await pilot.pause()
             text = app.query_one("#logs-text", Static)
             self.assertEqual(
@@ -124,7 +128,7 @@ class AppTest(unittest.TestCase):
 
     def test_logs_can_be_selected_with_the_mouse_and_copied_with_y(self) -> None:
         async def body(app, pilot) -> None:
-            await pilot.press("tab", "tab")
+            await pilot.press("tab", "tab", "tab")
             await pilot.pause()
             text = app.query_one("#logs-text", Static)
             # From "15:13" on the first log to "Reviewed PR" on the second
@@ -177,7 +181,7 @@ class AppTest(unittest.TestCase):
 
     def test_new_log_opens_a_window_that_reads_the_message_on_every_key(self) -> None:
         async def body(app, pilot) -> None:
-            await pilot.press("tab", "tab")
+            await pilot.press("tab", "tab", "tab")
             await pilot.pause()
             # Escape closes the window and logs nothing
             await pilot.press("n", *"Met", "escape")
@@ -211,7 +215,7 @@ class AppTest(unittest.TestCase):
 
     def test_the_logs_page_by_week_from_monday(self) -> None:
         async def body(app, pilot) -> None:
-            await pilot.press("tab", "tab")
+            await pilot.press("tab", "tab", "tab")
             await pilot.pause()
             dates = app.query_one("#logs-dates", Static)
             week = app.query_one("#logs-week-number", Static)
@@ -248,7 +252,7 @@ class AppTest(unittest.TestCase):
 
     def test_e_or_a_click_edits_a_day_and_refresh_reads_them_again(self) -> None:
         async def body(app, pilot) -> None:
-            await pilot.press("tab", "tab")
+            await pilot.press("tab", "tab", "tab")
             await pilot.pause()
             seen = Path(app.config.database_path).parent / "seen.md"
 
@@ -335,7 +339,7 @@ class AppTest(unittest.TestCase):
 
     def test_a_written_day_is_read_again_with_the_current_rules_even_unchanged(self) -> None:
         async def body(app, pilot) -> None:
-            await pilot.press("tab", "tab")
+            await pilot.press("tab", "tab", "tab")
             await pilot.pause()
 
             def actions() -> list[str]:
@@ -359,7 +363,7 @@ class AppTest(unittest.TestCase):
 
     def test_a_database_error_on_logging_or_saving_keeps_the_work(self) -> None:
         async def body(app, pilot) -> None:
-            await pilot.press("tab", "tab")
+            await pilot.press("tab", "tab", "tab")
             await pilot.pause()
             locked = sqlite3.OperationalError("database is locked")
             with patch("taf.widgets.logs_view.create_log", side_effect=locked):
@@ -425,6 +429,12 @@ class AppTest(unittest.TestCase):
             self.assertEqual(await help_keys(app, pilot), {"GENERAL": general, "TODO": ["escape", "e", "⇧+enter", "y", "j", "k"]})
             await pilot.press("tab")
             await pilot.pause()
+            self.assertEqual(
+                await help_keys(app, pilot),
+                {"GENERAL": general, "CURRENT": ["x", "p", "space", "o", "f", "/", "r", "y", "enter", "j", "k"]},
+            )
+            await pilot.press("tab")
+            await pilot.pause()
             self.assertEqual(await help_keys(app, pilot), {"GENERAL": general, "LOGS": ["n", "e", "[", "]", "r", "j", "k"]})
             # The footer's Help button opens the same
             await pilot.click("#btn-help")
@@ -438,7 +448,7 @@ class AppTest(unittest.TestCase):
 
     def test_stats_show_the_time_per_action_and_switch_period_and_action(self) -> None:
         async def body(app, pilot) -> None:
-            await pilot.press("tab", "tab", "tab")
+            await pilot.press("tab", "tab", "tab", "tab")
             await pilot.pause()
             self.assertIsInstance(app.focused, StatsScroll)
             period = app.query_one("#stats-period", Select)

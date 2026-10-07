@@ -1,5 +1,5 @@
-"""The table of the Notes and Todos tabs: the id, a todo's check box and the star, then the summary
-with its links and tags."""
+"""The table of the Notes, Todos and Current tabs: the id, a todo's check box and the star, then the
+summary with its links and tags. The Current tab's holds Slack items under a heading per project."""
 
 import re
 from dataclasses import dataclass
@@ -12,7 +12,11 @@ from textual.message import Message
 from textual.widgets import DataTable
 from tui_kit.shortcuts import ACTIONS, GENERAL
 
+from ..current import FYI, Group, VeilleItem
 from ..notes import TODO, Note, find_tags
+
+# What a row of the table can show: the Current tab's items look like todos
+Entry = Note | VeilleItem
 
 # Nerd Font check boxes (nf-md-checkbox_blank_outline, nf-md-checkbox_marked), as outils uses Nerd Font icons
 OPEN = "\U000f0131"
@@ -40,9 +44,10 @@ class ListColors:
 
 
 class NoteChangeRequested(Message):
-    """The user marked a todo done or not done, or pinned or unpinned a note; None leaves that field as it is."""
+    """The user marked a todo or a Slack item done or not done, or pinned or unpinned one; None leaves
+    that field as it is."""
 
-    def __init__(self, note: Note, done: bool | None = None, pinned: bool | None = None) -> None:
+    def __init__(self, note: Entry, done: bool | None = None, pinned: bool | None = None) -> None:
         super().__init__()
         self.note = note
         self.done = done
@@ -92,6 +97,28 @@ def summary_text(summary: str, colors: ListColors, *, done: bool = False, tags: 
     return text
 
 
+class Spacer:
+    """The blank row before a project's heading, after the first."""
+
+    def __init__(self, before: Group) -> None:
+        self.before = before
+
+
+Row = Group | Spacer | Entry
+
+
+def row_key(row: Row) -> str:
+    """A row's key: a note's or a todo's id, as the cursor_on of load and show; Slack items and
+    headings have their own, their ids being another count."""
+    if isinstance(row, Spacer):
+        return f"space:{row.before.name}"
+    if isinstance(row, Group):
+        return f"project:{row.name}"
+    if isinstance(row, VeilleItem):
+        return f"slack:{row.id}"
+    return str(row.id)
+
+
 def lead_width(kind: str) -> int:
     """A todo's check box, two spaces, the star; a note has only the star."""
     return 4 if kind == TODO else 1
@@ -99,7 +126,10 @@ def lead_width(kind: str) -> int:
 
 class NotesTable(DataTable):
     """One row per note of a kind, keyed by its id. A click on a todo's check box or the star changes
-    the note, on a tag filters the list, on a link opens it."""
+    the note, on a tag filters the list, on a link opens it.
+
+    Cells carry their own one-space padding, the table none: a project's heading then runs on from
+    the id column into the next ones, from the left edge, as one line of text."""
 
     BINDINGS = [
         Binding("enter", "select_cursor", "View", show=False, group=ACTIONS),
@@ -108,17 +138,23 @@ class NotesTable(DataTable):
     ]
 
     def __init__(self, kind: str, colors: ListColors, **kwargs) -> None:
-        super().__init__(cursor_type="row", zebra_stripes=False, show_header=False, cursor_foreground_priority="renderable", **kwargs)
+        super().__init__(
+            cursor_type="row", zebra_stripes=False, show_header=False, cursor_foreground_priority="renderable", cell_padding=0, **kwargs
+        )
         self.kind = kind
         self._colors = colors
-        self.notes: list[Note] = []
-        # Clicks on a todo's box and star column left of this x, from the column's start, hit the box
-        self._star_x = self.cell_padding + 2 if kind == TODO else 0
+        # The rows: notes, todos, or veille's items under their project's heading
+        self.notes: list[Row] = []
+        # Clicks on a todo's box and star column left of this x, from the column's start, hit the box:
+        # the cell's space, the box and the next space
+        self._star_x = 3 if kind == TODO else 0
+        # The longest id shown, which the id column fits
+        self._id_digits = 1
 
     def on_mount(self) -> None:
         # As wide as the longest id shown (show), so the rest lines up
-        self.add_column("", key="id", width=1)
-        self.add_column("", key="lead", width=lead_width(self.kind))
+        self.add_column("", key="id", width=3)
+        self.add_column("", key="lead", width=lead_width(self.kind) + 2)
         self.add_column("Summary", key="summary")
 
     @property
@@ -126,51 +162,112 @@ class NotesTable(DataTable):
         """The id column's width, its padding included."""
         return self.columns["id"].get_render_width(self)
 
-    def show(self, notes: list[Note], colors: ListColors | None = None, cursor_on: int | None = None) -> None:
-        """Show the notes, with the cursor on the note cursor_on names, else on the note it was on,
-        else on the same row."""
+    def show(self, notes: list[Group | Entry], colors: ListColors | None = None, cursor_on: int | str | None = None) -> None:
+        """Show the rows, a blank one before each project's heading but the first, with the cursor
+        on the one cursor_on names (a note's id, or a row key), else on the row it was on, else on
+        the same line, and never on a heading or a blank row."""
         self._colors = colors or self._colors
-        current = self.notes[self.cursor_row].id if 0 <= self.cursor_row < len(self.notes) else None
-        current = cursor_on or current
+        current = row_key(self.notes[self.cursor_row]) if 0 <= self.cursor_row < len(self.notes) else None
+        current = str(cursor_on) if cursor_on is not None else current
         row = self.cursor_row
         self.clear()
-        self.notes = list(notes)
-        self.columns["id"].width = max((len(str(note.id)) for note in notes), default=1)
+        self.notes = []
         for note in notes:
+            if isinstance(note, Group) and self.notes:
+                self.notes.append(Spacer(note))
+            self.notes.append(note)
+        self._id_digits = max((len(str(note.id)) for note in notes if isinstance(note, Note)), default=1)
+        self.columns["id"].width = self._id_digits + 2
+        for note in self.notes:
             # Text, not str: the table reads strings as markup, which eats brackets in a summary
-            self.add_row(Text(str(note.id), justify="right"), self._lead(note), self._summary(note), key=str(note.id))
-        ids = [note.id for note in notes]
-        if ids:
-            self.move_cursor(row=ids.index(current) if current in ids else min(max(row, 0), len(ids) - 1))
+            self.add_row(*self._cells(note), key=row_key(note))
+        keys = [row_key(note) for note in self.notes]
+        if keys:
+            self.move_cursor(row=keys.index(current) if current in keys else min(max(row, 0), len(keys) - 1))
+            self._step_off_headings(1)
 
-    def replace(self, note: Note) -> None:
-        """Show the note's new state in its row, which stays where it is."""
-        for index, shown in enumerate(self.notes):
-            if shown.id == note.id:
-                self.notes[index] = note
-                self.update_cell(str(note.id), "lead", self._lead(note))
-                self.update_cell(str(note.id), "summary", self._summary(note))
+    def _cells(self, note: Row) -> tuple[Text, Text, Text]:
+        if isinstance(note, Spacer):
+            return Text(), Text(), Text()
+        if isinstance(note, Group):
+            return self._heading(note)
+        shown_id = str(note.id) if isinstance(note, Note) else ""
+        return Text(f" {shown_id:>{self._id_digits}} "), self._lead(note), self._summary(note)
+
+    def _heading(self, group: Group) -> tuple[Text, Text, Text]:
+        """The project's name and count from the row's left edge, cut where the columns meet."""
+        label = f" {group.name} ({group.count})"
+        style = Style(color=self._colors.heading or None, bold=True)
+        id_end = self.columns["id"].width
+        lead_end = id_end + self.columns["lead"].width
+        return Text(label[:id_end], style=style), Text(label[id_end:lead_end], style=style), Text(label[lead_end:], style=style)
+
+    def _step_off_headings(self, step: int) -> None:
+        """Move the cursor from a heading or a blank row to the next entry that way, else the other way."""
+        for direction in (step, -step):
+            row = self.cursor_row
+            while 0 <= row < len(self.notes) and isinstance(self.notes[row], (Group, Spacer)):
+                row += direction
+            if 0 <= row < len(self.notes):
+                self.move_cursor(row=row)
                 return
 
-    def selected(self) -> Note | None:
-        return self.notes[self.cursor_row] if 0 <= self.cursor_row < len(self.notes) else None
+    def action_cursor_down(self) -> None:
+        self._move_to_entry(1)
 
-    def _lead(self, note: Note) -> Text:
-        text = Text(style=self._colors.date)
+    def action_cursor_up(self) -> None:
+        self._move_to_entry(-1)
+
+    def _move_to_entry(self, step: int) -> None:
+        """The next entry that way, past headings and blank rows; the cursor stays when there is none."""
+        row = self.cursor_row + step
+        while 0 <= row < len(self.notes) and isinstance(self.notes[row], (Group, Spacer)):
+            row += step
+        if 0 <= row < len(self.notes):
+            self.move_cursor(row=row)
+
+    def replace(self, note: Entry) -> None:
+        """Show the entry's new state in its row, which stays where it is."""
+        key = row_key(note)
+        for index, shown in enumerate(self.notes):
+            if row_key(shown) == key:
+                self.notes[index] = note
+                self.update_cell(key, "lead", self._lead(note))
+                self.update_cell(key, "summary", self._summary(note))
+                return
+
+    def selected(self) -> Entry | None:
+        """The note, todo or Slack item under the cursor; None on a heading or a blank row."""
+        note = self.notes[self.cursor_row] if 0 <= self.cursor_row < len(self.notes) else None
+        return None if isinstance(note, (Group, Spacer)) else note
+
+    def _lead(self, note: Entry) -> Text:
+        text = Text(" ", style=self._colors.date)
         if note.is_todo:
             text.append(DONE if note.done else OPEN)
             text.append("  ")
         text.append(PINNED if note.pinned else UNPINNED, style=self._colors.heading if note.pinned else self._colors.date)
+        text.append(" ")
         return text
 
-    def _summary(self, note: Note) -> Text:
-        return summary_text(note.summary, self._colors, done=note.done, tags=note.tags)
+    def _summary(self, note: Entry) -> Text:
+        if isinstance(note, VeilleItem):
+            # An fyi only informs: gray, like a done one
+            text = summary_text(note.summary, self._colors, done=note.done or note.item_kind == FYI)
+            kind = "" if note.item_kind == "action" else f" {note.item_kind}"
+            text.append(f"  {note.source}{kind}", style=Style(color=self._colors.date or None))
+        else:
+            text = summary_text(note.summary, self._colors, done=note.done, tags=note.tags)
+        return Text(" ") + text
 
     def on_mouse_move(self, event: events.MouseMove) -> None:
         # The highlight follows the pointer, as it does with the arrow keys
         row = event.style.meta.get("row")
-        if isinstance(row, int) and 0 <= row < self.row_count and row != self.cursor_row:
+        if isinstance(row, int) and 0 <= row < self.row_count and row != self.cursor_row and self._is_entry(row):
             self.move_cursor(row=row)
+
+    def _is_entry(self, row: int) -> bool:
+        return not isinstance(self.notes[row], (Group, Spacer))
 
     async def _on_click(self, event: events.Click) -> None:
         """A click on the box marks done, on the star pins, by which half of their column it hit: a
@@ -183,6 +280,8 @@ class NotesTable(DataTable):
         event.prevent_default()
         event.stop()
         note = self.notes[row]
+        if isinstance(note, (Group, Spacer)):
+            return
         self.move_cursor(row=row)
         if event.style.meta.get("column") == 1:
             if event.x - self.id_width < self._star_x:

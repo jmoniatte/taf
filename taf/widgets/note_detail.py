@@ -6,10 +6,11 @@ from textual import on
 from textual.widgets import Button, Static
 from tui_kit.shortcuts import ACTIONS, GENERAL
 
-from ..notes import NOTE, TODO, Note, long_date
+from ..current import VeilleItem
+from ..notes import NOTE, TODO, long_date
 from .buttons import flat_button
 from .note_markdown import NoteMarkdown
-from .notes_table import DONE, OPEN, PINNED, UNPINNED, NoteChangeRequested
+from .notes_table import DONE, OPEN, PINNED, UNPINNED, Entry, NoteChangeRequested
 from .notes_view import EditRequested
 
 
@@ -20,7 +21,7 @@ class ViewClosed(Message):
 class DeleteRequested(Message):
     """The user asked to delete the note on show."""
 
-    def __init__(self, note: Note) -> None:
+    def __init__(self, note: Entry) -> None:
         super().__init__()
         self.note = note
 
@@ -28,7 +29,7 @@ class DeleteRequested(Message):
 class DoneBox(Static):
     """A todo's check box, as in the list; a click marks it done or not."""
 
-    def show(self, note: Note) -> None:
+    def show(self, note: Entry) -> None:
         # Two spaces after it, as in the list, which also widen the target: Alacritty draws the
         # Nerd Font box wider than its cell
         self.update(f"{DONE if note.done else OPEN}  ")
@@ -42,7 +43,7 @@ class DoneBox(Static):
 class PinStar(Static):
     """The note's star: yellow when pinned, an outline when not; a click pins or unpins."""
 
-    def show(self, note: Note) -> None:
+    def show(self, note: Entry) -> None:
         # The spaces after it widen the target and keep the date clear of it: Alacritty draws the
         # star wider than its cell
         self.update(f"{PINNED if note.pinned else UNPINNED}  ")
@@ -77,7 +78,7 @@ class NoteDetail(Vertical):
 
     def __init__(self, tag_color: str = "", **kwargs) -> None:
         super().__init__(**kwargs)
-        self.note: Note | None = None
+        self.note: Entry | None = None
         self._tag_color = tag_color
 
     def compose(self) -> ComposeResult:
@@ -93,19 +94,21 @@ class NoteDetail(Vertical):
         with VerticalScroll(id="note-detail-scroll"):
             yield NoteMarkdown(tag_color=self._tag_color, id="note-detail-markdown")
 
-    def show(self, note: Note) -> None:
+    def show(self, note: Entry) -> None:
         self.show_header(note)
         self.query_one(NoteMarkdown).update(note.content)
         self.query_one(VerticalScroll).scroll_home(animate=False)
 
-    def show_header(self, note: Note) -> None:
+    def show_header(self, note: Entry) -> None:
         """The box, the star and the date for the note as it is now; the content stays as it was."""
         self.note = note
         for box in self.query(DoneBox):
             box.show(note)
         self.query_one(PinStar).show(note)
-        self.query_one("#note-detail-id", Static).update(f"#{note.id}")
-        self.query_one("#note-detail-date", Static).update(f"Updated {long_date(note.updated_at)}")
+        slack = isinstance(note, VeilleItem)
+        self.query_one("#note-detail-id", Static).update(note.source_name if slack else f"#{note.id}")
+        when = "Happened" if slack else "Updated"
+        self.query_one("#note-detail-date", Static).update(f"{when} {long_date(note.updated_at)}")
 
     def focus_content(self) -> None:
         self.query_one(VerticalScroll).focus()

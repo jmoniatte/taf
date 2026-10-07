@@ -14,7 +14,9 @@ from taf.app import TafApp
 from taf.config import Config
 from taf.database import open_database
 from taf.notes import NOTE, TODO, create_note, list_notes, long_date, set_done, set_pinned
-from taf.widgets import NoteDetail, NotesTab, NotesTable, TodoDetail, TodosTab
+from taf.veille.items import Item, get_item, save_item
+from taf.veille.projects import add_project
+from taf.widgets import CurrentTab, ItemDetail, NoteDetail, NotesTab, NotesTable, TodoDetail, TodosTab
 
 
 def python_editor(code: str) -> str:
@@ -57,7 +59,8 @@ class AppCase(unittest.TestCase):
 
     def rows(self, app) -> list[list[str]]:
         table = app.query_one("#todos-view").query_one(NotesTable)
-        return [[str(cell) for cell in table.get_row_at(row)] for row in range(table.row_count)]
+        # Each cell carries its own padding
+        return [[str(cell).strip() for cell in table.get_row_at(row)] for row in range(table.row_count)]
 
     def summaries(self, app) -> list[str]:
         return [row[-1] for row in self.rows(app)]
@@ -65,6 +68,61 @@ class AppCase(unittest.TestCase):
     def status(self, app) -> str:
         return str(app.query_one("#todos-view").query_one("#notes-status", Static).render())
 
+
+
+class CurrentTabTest(AppCase):
+    TAB = "current"
+
+    def test_current_items_under_their_project_to_close_and_star(self) -> None:
+        async def body(app, pilot) -> None:
+            add_project(self.db, "follow")
+            save_item(self.db, Item("slack", "C1:1", "action", "Answer Kevin", project="follow", url="https://slack/1",
+                                    happened_at="2026-10-06T16:00:00+00:00"))
+            save_item(self.db, Item("github", "ci:u/1", "action", "CI fails on r#1", url="https://ci/1", happened_at="2026-01-01T10:00:00+00:00"))
+            tab = app.query_one("#current-view", CurrentTab)
+            await pilot.press("r")
+            await pilot.pause()
+            table = tab.query_one(NotesTable)
+            lines = ["".join(str(cell) for cell in table.get_row_at(row)).rstrip() for row in range(table.row_count)]
+            # A heading per project from the left edge, a blank row between them; no id for an item
+            self.assertEqual(lines, [
+                " follow (1)", "    \U000f0131  ☆  Answer Kevin  slack", "", " No project (1)", "    \U000f0131  ☆  CI fails on r#1  github",
+            ])
+            self.assertEqual(str(tab.query_one("#notes-status", Static).render()), "2 open items")
+            # The cursor starts on an item, never a heading; j skips the blank row and the heading
+            self.assertEqual(table.cursor_row, 1)
+            await pilot.press("j")
+            self.assertEqual(table.cursor_row, 4)
+            await pilot.press("k", "x", "p")
+            await pilot.pause()
+            kevin = get_item(self.db, 1)
+            self.assertEqual((kevin["status"], kevin["pinned"]), ("done", 1))
+            with patch.object(app, "open_url") as opened:
+                await pilot.press("o")
+            opened.assert_called_once_with("https://slack/1")
+            # Done ones leave the open list on the next load; f shows them
+            await pilot.press("r")
+            await pilot.pause()
+            self.assertEqual(str(tab.query_one("#notes-status", Static).render()), "1 open item")
+            await pilot.press("f")
+            await pilot.pause()
+            self.assertEqual(str(tab.query_one("#notes-status", Static).render()), "1 done item")
+
+            # Enter shows it in full, without Edit or Delete; its box closes it again
+            await pilot.press("enter")
+            await pilot.pause()
+            detail = tab.query_one(ItemDetail)
+            self.assertTrue(detail.display)
+            self.assertEqual(str(detail.query_one("#note-detail-id", Static).render()), "Slack")
+            self.assertFalse(detail.query_one("#btn-edit").display or detail.query_one("#btn-delete").display)
+            await pilot.click("#current-view #note-detail-done")
+            await pilot.pause()
+            self.assertEqual(get_item(self.db, 1)["status"], "open")
+            await pilot.press("escape")
+            await pilot.pause()
+            self.assertFalse(detail.display)
+
+        self.run_app(body)
 
 
 class TodosViewTest(AppCase):
@@ -200,15 +258,16 @@ class TodosViewTest(AppCase):
             await pilot.press("escape")
             await pilot.pause()
             self.assertTrue(refresh.display)
+            # On Current's list and the logs too, not on the stats
+            await pilot.press("tab")
+            await pilot.pause()
+            self.assertTrue(refresh.display)
             await pilot.press("tab")
             await pilot.pause()
             self.assertTrue(refresh.display)
             await pilot.press("tab")
             await pilot.pause()
             self.assertFalse(refresh.display)
-            await pilot.press("tab")
-            await pilot.pause()
-            self.assertTrue(refresh.display)
 
         self.run_app(body, todos=("Old one",))
 
@@ -362,7 +421,7 @@ class TodosViewTest(AppCase):
             self.assertEqual(markdown.source, "Shipped")
 
             # Another tab and back, the todo still shows
-            await pilot.press("tab", "tab", "tab", "tab")
+            await pilot.press("tab", "tab", "tab", "tab", "tab")
             await pilot.pause()
             self.assertTrue(detail.display)
 
@@ -431,7 +490,7 @@ class NotesViewTest(AppCase):
             tab = app.query_one("#notes-view", NotesTab)
             table = tab.query_one(NotesTable)
             search = tab.query_one("#search", Input)
-            rows = lambda: [[str(cell) for cell in table.get_row_at(row)] for row in range(table.row_count)]  # noqa: E731
+            rows = lambda: [[str(cell).strip() for cell in table.get_row_at(row)] for row in range(table.row_count)]  # noqa: E731
             # Only the notes: the todo stays on Todos; a star, no box, and no status anywhere
             self.assertTrue(table.has_focus)
             self.assertEqual(rows(), [["3", "☆", "Wifi is on the fridge #home #wifi"], ["2", "☆", "Car insurance #home #car"]])

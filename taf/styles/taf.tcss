@@ -13,7 +13,8 @@
 #notes-view,
 #notes-view,
 #logs-view,
-#stats-view {
+#stats-view,
+#current-view {
     height: 1fr;
     padding: 0 1;
 }
