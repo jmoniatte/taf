@@ -12,13 +12,13 @@ from ..notes import long_date
 # The heading of the review requests, which have no project
 REVIEWS = "Pull Requests"
 # What each of WatchItem.links is called in the full view
-LINK_NAMES = {"slack": "Slack conversation", "github": "GitHub PR", "jenkins": "Jenkins build", "added": "Link"}
+LINK_NAMES = {"slack": "Slack conversation", "github": "GitHub PR", "added": "Link"}
 
 
 @dataclass(frozen=True, slots=True)
 class WatchItem:
     """A watch item, with what the notes' table and detail view read from a todo: id, summary,
-    content, tags, pinned, done, links, gray, row_key and date_text."""
+    content, tags, pinned, done, links, gray, tone, row_key and date_text."""
 
     id: int
     source: str
@@ -44,8 +44,15 @@ class WatchItem:
 
     @property
     def gray(self) -> bool:
-        """Done, or an fyi, which only informs."""
-        return self.done or self.item_kind == FYI
+        """Done, or an fyi, which only informs; CI that passes has its own color."""
+        return self.done or (self.item_kind == FYI and not is_ci(self.source, self.key))
+
+    @property
+    def tone(self) -> str | None:
+        """"failure" for failing CI, "success" once it passes again (an fyi): the color of its row."""
+        if not is_ci(self.source, self.key):
+            return None
+        return "success" if self.item_kind == FYI else "failure"
 
     @property
     def row_key(self) -> str:
@@ -62,10 +69,8 @@ class WatchItem:
 
     @property
     def links(self) -> list[tuple[str, str | None]]:
-        """What its row ends with, as (kind, url): failing CI links to the build (jenkins) and to the PR
-        (github); any other item to where it comes from (slack, github, or added by hand)."""
-        if is_ci(self.source, self.key):
-            return [("jenkins", self.url), ("github", self.key.removeprefix("ci:"))]
+        """What its row and its view's header show before the rest, as (kind, url): where it comes from,
+        slack, github, or added by hand. Failing CI's builds are in its details."""
         return [(self.source if self.source in ("slack", "github") else "added", self.url)]
 
     @property

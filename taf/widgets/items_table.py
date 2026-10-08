@@ -18,10 +18,9 @@ from ..watch.view import Group, WatchItem
 # What a row of the table shows: a note, a todo, or a watch item, which reads like a todo
 ListItem = Note | WatchItem
 
-# A watch item's links, each a Nerd Font icon a click opens: nf-md-slack, nf-md-github, nf-fa-jenkins
-# (failing CI's build, in red), and nf-md-numeric_7_circle for one the user or an agent added (7 is
-# how the user signs)
-LINK_ICONS = {"slack": "\U000f04b1", "github": "\U000f02a4", "jenkins": "", "added": "\U000f0cac"}
+# A watch item's links, each a Nerd Font icon a click opens, before its summary: nf-md-slack,
+# nf-md-github, and nf-md-numeric_7_circle for one the user or an agent added (7 is how the user signs)
+LINK_ICONS = {"slack": "\U000f04b1", "github": "\U000f02a4", "added": "\U000f0cac"}
 # Nerd Font check boxes (nf-md-checkbox_blank_outline, nf-md-checkbox_marked), as outils uses Nerd Font icons
 OPEN = "\U000f0131"
 DONE = "\U000f0132"
@@ -44,14 +43,15 @@ class ListColors:
     code: str = ""
     # The note's tags shown after its text
     extra_tag: str = ""
-    # Failing CI's build icon
+    # Failing CI, and CI that passes again
     failure: str = ""
+    success: str = ""
 
 
 def list_colors(palette: dict[str, str]) -> ListColors:
     return ListColors(
         date=palette["comment"], link=palette["blue"], heading=palette["yellow"], tag=palette["purple"],
-        code=palette["orange"], extra_tag=palette["cyan"], failure=palette["red"],
+        code=palette["orange"], extra_tag=palette["cyan"], failure=palette["red"], success=palette["green"],
     )
 
 
@@ -110,11 +110,11 @@ def summary_text(summary: str, colors: ListColors, *, done: bool = False, tags: 
 
 
 def link_icons(links: list[tuple[str, str | None]], colors: ListColors) -> Text:
-    """A watch item's links as icons a click opens, as its row ends and its view's header shows them."""
+    """A watch item's links as icons a click opens, as its row starts and its view's header shows them."""
     icons = Text()
     for kind, url in links:
         icons.append("  " if icons else "")
-        icons.append(LINK_ICONS[kind], style=Style(color=(colors.failure if kind == "jenkins" else colors.link) or None, link=url))
+        icons.append(LINK_ICONS[kind], style=Style(color=colors.link or None, link=url))
     return icons
 
 
@@ -294,11 +294,16 @@ class ItemsTable(DataTable):
         return text
 
     def _summary(self, item: ListItem) -> Text:
-        text = Text(" ") + summary_text(item.summary, self._colors, done=item.gray, tags=item.tags)
+        text = Text(" ")
         if item.links:
-            text.append("  ")
+            # Where it comes from first, before what it says
             text.append_text(link_icons(item.links, self._colors))
-        return text
+            text.append("  ")
+        summary = summary_text(item.summary, self._colors, done=item.gray, tags=item.tags)
+        if item.tone and not item.done:
+            # CI is hard to miss: red while it fails, green once it passes again
+            summary.stylize(Style(color=(self._colors.failure if item.tone == "failure" else self._colors.success) or None))
+        return text + summary
 
     def on_mouse_move(self, event: events.MouseMove) -> None:
         # The highlight follows the pointer, as it does with the arrow keys

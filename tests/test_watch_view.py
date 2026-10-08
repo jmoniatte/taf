@@ -51,8 +51,11 @@ class WatchListTest(unittest.TestCase):
         self.assertEqual(grouped(others, (1, "u"))[0].note, "1 PR ready to deploy")
         self.assertNotEqual(labels(grouped(others, (0, "u")))[0], "Pull Requests")
         ci = next(item for item in items if item.source == "github")
-        self.assertEqual(ci.content, "CI fails on r#1\n\n- Kind: action\n- Jenkins build: [https://ci/1](https://ci/1)\n- GitHub PR: [u/1](u/1)")
-        self.assertEqual(ci.links, [("jenkins", "https://ci/1"), ("github", "u/1")])
+        self.assertEqual(ci.content, "CI fails on r#1\n\n- Kind: action\n- GitHub PR: [https://ci/1](https://ci/1)")
+        # Under GitHub only, red while it fails, green once it passes
+        self.assertEqual((ci.links, ci.tone, ci.gray), ([("github", "https://ci/1")], "failure", False))
+        save_item(self.db, Item("github", "ci:u/1", "fyi", "CI passes on r#1", happened_at="2026-10-02T10:00:00+00:00"))
+        self.assertEqual([(item.tone, item.gray) for item in load_items(self.db) if item.key == "ci:u/1"], [("success", False)])
         # A #word is searched as a word: watch items have no tags
         self.assertEqual(load_items(self.db, "#nope"), [])
 

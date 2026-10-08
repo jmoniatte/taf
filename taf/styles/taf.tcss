@@ -157,7 +157,7 @@
 }
 
 /* One line, then a blank one before the content: the breadcrumbs' "Todos >", a link back to the
-   list as in maison, the id, when it was created or updated, a watch item's icons; on the right the
+   list as in maison, the id, a watch item's icons, when it was created or updated; on the right the
    box, the star, Edit and Delete */
 #item-detail-header {
     height: 1;
@@ -193,7 +193,7 @@
 
 #item-detail-links {
     width: auto;
-    margin-left: 2;
+    margin-right: 2;
 }
 
 #item-detail-header .spacer {

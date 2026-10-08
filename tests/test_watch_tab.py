@@ -26,9 +26,9 @@ class WatchTabTest(AppCase):
             await pilot.pause()
             table = tab.query_one(ItemsTable)
             lines = ["".join(str(cell) for cell in table.get_row_at(row)).rstrip() for row in range(table.row_count)]
-            # A heading per project from the left edge, a blank row between them; each item with its id
+            # A heading per project from the left edge, a blank row between them; each item with its id, then its icons
             self.assertEqual(lines, [
-                " follow (1)", " 1  \U000f0131  ☆  Answer Kevin  \U000f04b1", "", " No project (1)", " 2  \U000f0131  ☆  CI fails on r#1  \uf2ec  \U000f02a4",
+                " follow (1)", " 1  \U000f0131  ☆  \U000f04b1  Answer Kevin", "", " No project (1)", " 2  \U000f0131  ☆  \U000f02a4  CI fails on r#1",
             ])
             self.assertEqual(str(tab.query_one("#items-status", Static).render()), "2 open items")
             # The cursor starts on an item, never a heading; j skips the blank row and the heading
@@ -39,16 +39,17 @@ class WatchTabTest(AppCase):
             await pilot.pause()
             kevin = get_item(self.db, 1)
             self.assertEqual((kevin["status"], kevin["pinned"]), ("done", 1))
-            # Each icon links to its own page, a click opening it: failing CI's build in red, its PR in blue
+            # Each icon, in blue, links to where the item comes from, a click opening it; failing CI is red
             links = [[(span.style.link, span.style.color.name) for span in table.get_row_at(row)[2].spans if span.style.link]
                      for row in (1, 4)]
             palette = app.palette
-            self.assertEqual(links, [[("https://slack/1", palette["blue"])], [("https://ci/1", palette["red"]), ("u/1", palette["blue"])]])
+            self.assertEqual(links, [[("https://slack/1", palette["blue"])], [("https://ci/1", palette["blue"])]])
+            self.assertIn(palette["red"], [span.style.color.name for span in table.get_row_at(4)[2].spans if span.style.color])
             # A new theme draws the headings and the blank row again, in its colors
             app.apply_theme("dracula")
             await pilot.pause()
             self.assertEqual(len(table.lines), 5)
-            self.assertEqual(table.get_row_at(4)[2].spans[-1].style.color.name, app.palette["blue"])
+            self.assertEqual(next(span for span in table.get_row_at(4)[2].spans if span.style.link == "https://ci/1").style.color.name, app.palette["blue"])
             # Done ones leave the open list on the next load; f shows them
             await pilot.press("r")
             await pilot.pause()
@@ -63,9 +64,9 @@ class WatchTabTest(AppCase):
             detail = tab.query_one(WatchDetail)
             self.assertTrue(detail.display)
             self.assertEqual(str(detail.query_one("#item-detail-id", Static).render()), "#1")
-            # One line: "Watch >", a link back, the id, when it was saved, Slack's icon, then the box and the star
+            # One line: "Watch >", a link back, the id, Slack's icon, when it was saved, then the box and the star
             created = long_date(load_item(self.db, 1).created_at)
-            self.assertEqual(header(detail), f"Watch > #1 Created {created} \U000f04b1 \U000f0132 ★")
+            self.assertEqual(header(detail), f"Watch > #1 \U000f04b1 Created {created} \U000f0132 ★")
             links = [span.style.link for span in detail.query_one("#item-detail-links", Static).render().spans]
             self.assertEqual(links, ["https://slack/1"])
             self.assertFalse(detail.query("#btn-edit") or detail.query("#btn-delete"))

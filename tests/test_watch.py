@@ -90,10 +90,10 @@ class ItemsTest(Case):
 
 
 def graphql(login: str, prs: list[tuple[dict, dict]], requests: dict | None = None) -> dict:
-    """GitHub's answer to github.QUERY: the user's PRs, each (pr, view) as the old gh calls gave them,
-    and the review searches' PRs by alias."""
+    """GitHub's answer to github.QUERY: the user's PRs, each a pr and a view with its comments, reviews,
+    checks (statusCheckRollup) and their overall state (rollupState), and the review searches' PRs by alias."""
     def node(pr, view):
-        rollup = {"contexts": {"nodes": view.get("statusCheckRollup") or []}}
+        rollup = {"state": view.get("rollupState"), "contexts": {"nodes": view.get("statusCheckRollup") or []}}
         return {**pr, "headRefName": view["headRefName"], "comments": {"nodes": view["comments"]},
                 "reviews": {"nodes": view["reviews"]}, "commits": {"nodes": [{"commit": {"statusCheckRollup": rollup}}]}}
 
@@ -173,7 +173,9 @@ class GithubTest(Case):
         rows = {r["key"]: r for r in list_items(self.db, source="github")}
         self.assertEqual(rows["review:u/9"]["details"], "Review requested from team rails; opened by kim.")
         self.assertEqual((rows["replies:u/1"]["kind"], rows["replies:u/1"]["project"]), ("action", "follows"))
-        self.assertEqual(rows["ci:u/1"]["url"], "https://ci/spec_tests/5")
+        # The PR is its link; the failing builds are in its details
+        self.assertEqual(rows["ci:u/1"]["url"], "u/1")
+        self.assertIn("- spec_tests: [https://ci/spec_tests/5](https://ci/spec_tests/5)", rows["ci:u/1"]["details"])
 
         set_done(self.db, [rows["ci:u/1"]["id"], rows["replies:u/1"]["id"]])
         view["reviews"].append({"author": {"login": "pat"}, "state": "APPROVED", "submittedAt": "2026-10-02T09:00:00Z"})
@@ -192,6 +194,46 @@ class GithubTest(Case):
         report = github.sync(self.db, config, run=gh)
         self.assertEqual((report.found, report.closed), ([], ["r#1: pat commented and approved", "Review r#9 Fix maps"]))
         self.assertEqual(list_items(self.db, source="github"), [])
+
+
+class CiTest(Case):
+    def test_failing_ci_turns_to_passing_until_the_pr_closes(self):
+        pr = {"url": "u/1", "number": 1, "title": "Add follows", "repository": {"name": "r"}}
+        view = {"headRefName": "jean/follows", "comments": [], "reviews": [], "rollupState": "SUCCESS",
+                "statusCheckRollup": [{"context": "spec_tests", "state": "SUCCESS", "startedAt": "2026-10-01T09:00:00Z"}]}
+        prs_open = True
+
+        def gh(args):
+            return graphql("jean", [(pr, view)] if prs_open else [])
+
+        def ci():
+            return {r["key"]: r for r in list_items(self.db, status=None, source="github")}.get("ci:u/1")
+
+        # Passing from the start: nothing to say
+        github.sync(self.db, run=gh)
+        self.assertIsNone(ci())
+        view["rollupState"] = "FAILURE"
+        view["statusCheckRollup"] = [{"context": "spec_tests", "state": "FAILURE", "startedAt": "2026-10-01T10:00:00Z",
+                                      "targetUrl": "https://ci/5"}]
+        github.sync(self.db, run=gh)
+        self.assertEqual((ci()["summary"], ci()["kind"], ci()["status"]), ("CI fails on r#1: spec_tests", "action", "open"))
+        # A new build running: as it was
+        view["rollupState"] = "PENDING"
+        view["statusCheckRollup"] = [{"context": "spec_tests", "state": "PENDING", "startedAt": "2026-10-01T11:00:00Z"}]
+        github.sync(self.db, run=gh)
+        self.assertEqual((ci()["summary"], ci()["status"]), ("CI fails on r#1: spec_tests", "open"))
+        # It passes: the same item says so, an fyi, open until the PR closes
+        view["rollupState"] = "SUCCESS"
+        view["statusCheckRollup"] = [{"context": "spec_tests", "state": "SUCCESS", "startedAt": "2026-10-01T11:00:00Z",
+                                      "completedAt": "2026-10-01T11:10:00Z"}]
+        report = github.sync(self.db, run=gh)
+        self.assertEqual((ci()["summary"], ci()["kind"], ci()["status"]), ("CI passes on r#1", "fyi", "open"))
+        self.assertEqual(report.closed, [])
+        github.sync(self.db, run=gh)
+        self.assertEqual(ci()["status"], "open")
+        prs_open = False
+        github.sync(self.db, run=gh)
+        self.assertEqual(ci()["status"], "done")
 
 
 def fake_run(output, cost=0.05, error=None, searches=1, tool_errors=()):

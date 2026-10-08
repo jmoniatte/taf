@@ -44,7 +44,7 @@ class PinStar(Static):
 
 
 class LinkIcons(Static):
-    """A watch item's icons, as at the end of its row in the list: a click on one opens its page."""
+    """A watch item's icons, as at the start of its row in the list: a click on one opens its page."""
 
     def on_click(self, event: events.Click) -> None:
         if event.style.link:
@@ -67,8 +67,8 @@ def detail_bindings(noun: str, editable: bool = True) -> list[Binding]:
 
 class ItemDetail(Vertical):
     """One note, todo or watch item in place of the list: a header line, then its content as markdown.
-    The header: the breadcrumbs' "Notes >" (CRUMB), a link back to the list as in maison, the id, when
-    it was created or updated, a watch item's icons; on the right, the check box (HAS_DONE) and the
+    The header: the breadcrumbs' "Notes >" (CRUMB), a link back to the list as in maison, the id, a
+    watch item's icons, when it was created or updated; on the right, the check box (HAS_DONE) and the
     star, as in the list, which a click toggles, then Edit and Delete (EDITABLE)."""
 
     NOUN = ""
@@ -86,8 +86,8 @@ class ItemDetail(Vertical):
             yield Static(self.CRUMB, id="breadcrumb-list")
             yield Static(">", classes="breadcrumb-separator")
             yield Static("", id="item-detail-id")
-            yield Static("", id="item-detail-date")
             yield LinkIcons("", id="item-detail-links")
+            yield Static("", id="item-detail-date")
             yield Static("", classes="spacer")
             if self.HAS_DONE:
                 yield DoneBox("", id="item-detail-done")
@@ -111,7 +111,10 @@ class ItemDetail(Vertical):
         self.query_one(PinStar).show(item)
         self.query_one("#item-detail-id", Static).update(f"#{item.id}")
         self.query_one("#item-detail-date", Static).update(item.date_text)
-        self.query_one(LinkIcons).update(link_icons(item.links, list_colors(self.app.palette)))
+        icons = self.query_one(LinkIcons)
+        icons.update(link_icons(item.links, list_colors(self.app.palette)))
+        # A note has none, and no room is kept for them
+        icons.display = bool(item.links)
 
     def focus_content(self) -> None:
         self.query_one(VerticalScroll).focus()

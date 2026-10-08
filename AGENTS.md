@@ -177,11 +177,11 @@ place, one todo (`TodoDetail`), as yafyaf-tui's `MainArea` switches between its 
 `YafDetail`; `NotesTab.viewing` is the todo on show, or None. The views of a todo, a note and a
 watch item share one layout (`ItemDetail`): a header line, then the content as markdown. The header
 starts with breadcrumbs, as maison's todo page does: "Todos >" (`ItemDetail.CRUMB`; "Notes >",
-"Watch >"), in blue, a link back to the list; then the id, "#12"; then, in green, "Created Today at
+"Watch >"), in blue, a link back to the list; then the id, "#12"; then a watch item's icons, links
+as in its row (`LinkIcons`, hidden for a note or a todo); then, in green, "Created Today at
 3:09pm" while the content never changed, else "Updated Yesterday at 3:09pm" (`notes.date_line`,
 `notes.long_date`: Today, Yesterday, or "October 5, 2026", always with the time; a watch item's is
-"Created ..." with when it was saved); then a watch item's icons, links as in its row
-(`LinkIcons`). On the right: the check box (not for a note) and the star as in the list, which a
+"Created ..." with when it was saved). On the right: the check box (not for a note) and the star as in the list, which a
 click toggles (in the list's row too), then Edit and Delete (not for a watch item). After the
 header, the content (`NoteMarkdown`, a
 copy of yafyaf-tui's `YafMarkdown`: links the terminal can open, tags that filter the list, code
@@ -241,9 +241,10 @@ own: each cell carries its spaces, so a heading starts at the row's left edge, c
 meet (`ItemsTable._heading`), and a blank row (`Spacer`) comes before each heading but the first.
 The cursor skips headings and blank rows. A row starts with the item's id, as a todo's does (another
 count than the todos': `taf watch show 12`, not `taf todo show 12`),
-and ends with Nerd Font icons that a click opens (`WatchItem.links`, `LINK_ICONS`): where
+then, before its summary, Nerd Font icons that a click opens (`WatchItem.links`, `LINK_ICONS`): where
 it comes from in blue (Slack, GitHub, or a 7 in a circle, the user's sign, for one added by hand or
-by an agent); failing CI has two, its build (Jenkins, in red) then its PR (GitHub). There is no key to
+by an agent); CI's is GitHub's, to the PR, its builds being in its details. CI's row is red while
+it fails and green once it passes again (`WatchItem.tone`). There is no key to
 open a link. The full view writes each address out after its name (`LINK_NAMES`: "GitHub PR:
 <url>"), so it can be read and copied, and only the address is a link. Its kind is in the full view
 only, and an fyi is gray. Keys: `x` done, `p` or space pin, Enter shows it in
@@ -283,8 +284,11 @@ How a GitHub sync works: `github.sync` runs `gh` only, no Claude run, and makes 
 checks on the last commit, and one search per kind of review request (`requests`: theirs, then each
 team's). Each run it works out from that which GitHub items should exist, by key: `replies:<pr url>` (others' comments and reviews
 since the user's last comment or review on their PR; `ignore_users` and `[bot]` accounts skipped;
-fyi when all are approvals), `ci:<pr url>` (failing checks on the last commit, the latest run of
-each check, CANCELLED ignored) and `review:<pr url>` (`user-review-requested:@me`, plus each of
+fyi when all are approvals), `ci:<pr url>` (`github.ci_item`: the checks on the last commit, the
+latest run of each, CANCELLED ignored; while any fails, "CI fails on r#1: spec_tests", an action,
+the failing builds' links in its details; once the commit's overall state is SUCCESS, and only for a
+PR that has a CI item, "CI passes on r#1", an fyi, open until the PR closes; while a new build runs,
+as it was) and `review:<pr url>` (`user-review-requested:@me`, plus each of
 `review_teams` not yet approved or reviewed by the user; drafts and the user's own PRs left out). An
 open GitHub item missing from the run is closed as done. An item is saved only when it is new or its
 `happened_at` (its latest event) changed (`github.track`): then a done one comes back open; an item

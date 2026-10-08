@@ -23,7 +23,7 @@ query {
         url number title headRefName repository { name }
         comments(last: 100) { nodes { author { login } createdAt } }
         reviews(last: 100) { nodes { author { login } state submittedAt } }
-        commits(last: 1) { nodes { commit { statusCheckRollup { contexts(first: 100) { nodes {
+        commits(last: 1) { nodes { commit { statusCheckRollup { state contexts(first: 100) { nodes {
           ... on CheckRun { name conclusion startedAt completedAt detailsUrl }
           ... on StatusContext { context state createdAt targetUrl }
         } } } } } }
@@ -144,17 +144,26 @@ def record(db: sqlite3.Connection, data: dict, config: GithubConfig) -> SyncRepo
                    (now(), project))
 
     items = list(requested)
+    # The PRs with a CI item, failing or passing: only they say when CI passes again
+    with_ci = {r["key"] for r in list_items(db, status=None, source=SOURCE) if r["key"].startswith("ci:")}
+    # CI items left as they are while a new build runs
+    running: set[str] = set()
     for pr in found:
         project = db.execute(
             "SELECT p.name FROM watch_prs pr LEFT JOIN watch_projects p ON p.id = pr.project_id WHERE pr.url = ?",
             (pr["url"],),
         ).fetchone()["name"]
-        items += [i for i in (reply_item(pr, me, config.ignore_users, project), ci_item(pr, project)) if i]
+        items += [item for item in (reply_item(pr, me, config.ignore_users, project),) if item]
+        state, ci = ci_item(pr, project)
+        if state == "failing" or (state == "passing" and ci.key in with_ci):
+            items.append(ci)
+        elif state == "running" and ci.key in with_ci:
+            running.add(ci.key)
     for item in items:
         if track(db, item):
             report.found.append(item.summary)
-    # Merged PRs, passing CI, answered comments and fulfilled requests: nothing left to do
-    keys = {i.key for i in items}
+    # Merged or closed PRs, answered comments and fulfilled requests: nothing left to do
+    keys = {i.key for i in items} | running
     stale = [r for r in list_items(db, source=SOURCE) if r["key"] not in keys]
     set_done(db, [r["id"] for r in stale])
     report.closed = [r["summary"] for r in stale]
@@ -240,29 +249,37 @@ def reply_item(pr: dict, me: str, ignore: list[str], project: str | None) -> Ite
     )
 
 
-def ci_item(pr: dict, project: str | None) -> Item | None:
-    """The checks failing on the PR's last commit, with links to their builds."""
+def ci_item(pr: dict, project: str | None) -> tuple[str, Item]:
+    """The state of the checks on the PR's last commit, "failing", "passing" or "running" (or none:
+    no checks), and its CI item: what fails, with links to the builds, or that all pass. The PR
+    itself is the item's link, the builds are in its details."""
     commits = nodes(pr.get("commits"))
     rollup = (commits[0].get("commit") or {}).get("statusCheckRollup") or {} if commits else {}
     latest: dict[str, tuple[str, str, str]] = {}
     for check in nodes(rollup.get("contexts")):
         name = check.get("context") or check.get("name") or "?"
         state = check.get("state") or check.get("conclusion") or ""
-        when = check.get("startedAt") or check.get("completedAt") or check.get("createdAt") or ""
+        when = check.get("completedAt") or check.get("startedAt") or check.get("createdAt") or ""
         # A check run again shows up once per run
         if name not in latest or when >= latest[name][0]:
             latest[name] = (when, state, check.get("targetUrl") or check.get("detailsUrl") or "")
     failing = {name: check for name, check in latest.items() if check[1] in FAILED}
-    if not failing:
-        return None
-    first = next(iter(failing.values()))
-    return Item(
-        source=SOURCE, key=f"ci:{pr['url']}", kind="action",
-        summary=f"CI fails on {pr['repository']['name']}#{pr['number']}: {', '.join(failing)}",
-        details="\n".join([pr["title"], *(f"{name}: {url}" for name, (_, _, url) in failing.items())]),
-        project=project, url=first[2] or pr["url"],
-        happened_at=local_iso(max(when for when, _, _ in failing.values())),
-    )
+    name = f"{pr['repository']['name']}#{pr['number']}"
+    item = Item(source=SOURCE, key=f"ci:{pr['url']}", kind="action", summary="", project=project, url=pr["url"])
+    if failing:
+        item.summary = f"CI fails on {name}: {', '.join(failing)}"
+        builds = [f"- {check}: [{url}]({url})" if url else f"- {check}" for check, (_, _, url) in failing.items()]
+        item.details = "\n".join([pr["title"], "", "Failing checks:", *builds])
+        item.happened_at = local_iso(max(when for when, _, _ in failing.values()))
+        return "failing", item
+    # Only a finished build passes: a new one still running leaves the item as it was
+    if rollup.get("state") != "SUCCESS":
+        return ("running" if latest else ""), item
+    item.kind = FYI
+    item.summary = f"CI passes on {name}"
+    item.details = "\n".join([pr["title"], "", "Every check passes on the last commit."])
+    item.happened_at = local_iso(max(when for when, _, _ in latest.values()))
+    return "passing", item
 
 
 def listed(words: list[str]) -> str:

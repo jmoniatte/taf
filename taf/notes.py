@@ -59,6 +59,11 @@ class Note:
         return self.done
 
     @property
+    def tone(self) -> str | None:
+        """A watch item's CI has a color of its own; a note has none."""
+        return None
+
+    @property
     def row_key(self) -> str:
         """Its row's key in a table."""
         return str(self.id)

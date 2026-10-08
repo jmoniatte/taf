@@ -48,7 +48,7 @@ the theme and `q` quits.
   Requests, with how many PRs are ready to deploy (`deploy_repo` in the config) as a link; the
   rest is under a heading per project: Slack threads, replies on your pull requests, failing CI,
   and items agents added. `x` closes one, `p` or
-  space stars it, a click on its icon opens it in Slack or GitHub (failing CI has two: the build and the PR), Enter shows it in full, `f` shows open, done or
+  space stars it, a click on its icon opens it in Slack or GitHub, Enter shows it in full, `f` shows open, done or
   all. The list reloads every minute. `c`, or the Collect button, collects now, as the timer does
   (GitHub, then Slack, a paid Claude run).
 - **Logs**: one week at a time, the last day first. `[` and `]` go to the previous and next week,
@@ -64,7 +64,8 @@ requests, what others said on them since you last replied, their failing checks,
 requests waiting on your review or on one of your teams'. Then a headless Claude run (Sonnet unless
 the config says otherwise) reads new Slack messages through the claude.ai Slack connector, with
 read-only tools, and keeps only the conversations that matter to you. Raw messages are never stored. GitHub items close
-by themselves once the PR is merged, CI passes, you reply, or the review is done.
+by themselves once the PR is merged, you reply, or the review is done. Failing CI is red; once it
+passes it turns green, "CI passes", until the PR closes. Its builds' links are in its full view.
 
 ### Setting it up
 
