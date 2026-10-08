@@ -7,7 +7,7 @@ from tui_kit.shortcuts import ACTIONS
 
 from ..notes import NOTE, TAG, TODO, Note, list_notes, set_done, set_pinned, split_query, tag_counts
 from .list_view import ListView
-from .notes_table import TagSelected
+from .items_table import TagSelected
 
 # The Tags dropdown's first choice, which takes the tags out of the search; not a tag name, which has no space
 ANY_TAG = "any tag"
@@ -48,6 +48,9 @@ class NotesView(ListView):
     """The Notes tab's list, like YafYaf's: the search box, the Tags dropdown and New Note over the
     notes, the last updated first. TodosView adds the status."""
 
+    # Which notes: plain notes, or todos
+    KIND = NOTE
+    NOUN = "note"
     BINDINGS = list_bindings(NOTE)
 
     def __init__(self, **kwargs) -> None:
@@ -129,7 +132,7 @@ class TodosView(NotesView):
 
     KIND = TODO
     NOUN = "todo"
-    HAS_STATUS = True
+    HAS_DONE = True
     BINDINGS = list_bindings(TODO)
 
     def add_tag(self, name: str | None) -> None:

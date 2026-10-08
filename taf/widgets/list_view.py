@@ -9,10 +9,10 @@ from textual.containers import Horizontal, Vertical
 from textual.message import Message
 from textual.widgets import DataTable, Input, Select, Static
 
-from ..notes import DEFAULT_STATUS, NOTE, STATUS_WORD, STATUSES, split_status
+from ..notes import DEFAULT_STATUS, STATUS_WORD, STATUSES, split_status
 from ..watch.view import Group
 from .dashed_rule import DashedRule
-from .notes_table import ItemChangeRequested, ListItem, NotesTable, list_colors
+from .items_table import ItemChangeRequested, ListItem, ItemsTable, list_colors
 
 
 class ItemOpened(Message):
@@ -25,40 +25,39 @@ class ItemOpened(Message):
 
 class ListView(Vertical):
     """A search box and the controls a subclass adds, then the count over a dashed rule and the table,
-    which has no header. With HAS_STATUS, the search holds is:open or is:done, as on GitHub, which the
+    which has no header. With HAS_DONE, the search holds is:open or is:done, as on GitHub, which the
     status dropdown only mirrors. A subclass says what to list (fetch) and how to mark an item done
     or pinned."""
 
-    # The table's kind: a todo's draws a check box
-    KIND = NOTE
     # What the count, the search box and the messages call one
-    NOUN = "note"
-    HAS_STATUS = False
+    NOUN = ""
+    # Items can be done: a check box in each row, x, and the open, done or all status
+    HAS_DONE = False
 
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
-        self.status = DEFAULT_STATUS if self.HAS_STATUS else "all"
+        self.status = DEFAULT_STATUS if self.HAS_DONE else "all"
         # The search box's text, is:open or is:done and #tags included: the dropdowns only mirror it
-        self.query_text = f"is:{DEFAULT_STATUS}" if self.HAS_STATUS else ""
+        self.query_text = f"is:{DEFAULT_STATUS}" if self.HAS_DONE else ""
 
     def compose(self) -> ComposeResult:
-        with Horizontal(id="notes-controls"):
+        with Horizontal(id="items-controls"):
             yield Input(self.query_text, placeholder=f"Search {self.NOUN}s", id="search")
             yield from self.compose_controls()
-        yield Static("", id="notes-status")
-        yield DashedRule(id="notes-rule")
-        yield NotesTable(self.KIND, list_colors(self.app.palette), id="notes-table")
+        yield Static("", id="items-status")
+        yield DashedRule(id="items-rule")
+        yield ItemsTable(self.HAS_DONE, list_colors(self.app.palette), id="items-table")
 
     def compose_controls(self) -> ComposeResult:
-        if self.HAS_STATUS:
-            yield Select(STATUSES, value=DEFAULT_STATUS, allow_blank=False, id="todo-status")
+        if self.HAS_DONE:
+            yield Select(STATUSES, value=DEFAULT_STATUS, allow_blank=False, id="status-selector")
 
     def on_mount(self) -> None:
         self.call_after_refresh(self.load)
 
     @property
-    def table(self) -> NotesTable:
-        return self.query_one(NotesTable)
+    def table(self) -> ItemsTable:
+        return self.query_one(ItemsTable)
 
     @property
     def database(self) -> sqlite3.Connection | None:
@@ -90,9 +89,9 @@ class ListView(Vertical):
         if query is not None:
             self.query_text = query.strip()
         status, words = split_status(self.query_text)
-        if self.HAS_STATUS:
+        if self.HAS_DONE:
             self.status = status
-            selector = self.query_one("#todo-status", Select)
+            selector = self.query_one("#status-selector", Select)
             # Changed here, not chosen: no message
             with selector.prevent(Select.Changed):
                 selector.value = status
@@ -112,7 +111,7 @@ class ListView(Vertical):
         return f"{text} matching '{words}'" if words else text
 
     def _set_count(self, text: str) -> None:
-        self.query_one("#notes-status", Static).update(text)
+        self.query_one("#items-status", Static).update(text)
 
     def action_refresh(self) -> None:
         self.load()
@@ -140,9 +139,9 @@ class ListView(Vertical):
 
     def action_next_status(self) -> None:
         values = [value for _, value in STATUSES]
-        self.query_one("#todo-status", Select).value = values[(values.index(self.status) + 1) % len(values)]
+        self.query_one("#status-selector", Select).value = values[(values.index(self.status) + 1) % len(values)]
 
-    @on(Select.Changed, "#todo-status")
+    @on(Select.Changed, "#status-selector")
     def _status_picked(self, event: Select.Changed) -> None:
         """Put is:open or is:done first in the search in place of the one there, or none for All, and run it."""
         event.stop()
@@ -189,7 +188,7 @@ class ListView(Vertical):
             self.app.copy_to_clipboard(item.content)
             self.notify(f"{self.NOUN.capitalize()} copied")
 
-    @on(DataTable.RowSelected, "#notes-table")
+    @on(DataTable.RowSelected, "#items-table")
     def _row_selected(self, event: DataTable.RowSelected) -> None:
         event.stop()
         if (item := self.table.selected()) is not None:

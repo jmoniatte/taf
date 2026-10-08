@@ -27,25 +27,25 @@
    LISTS - Notes, Todos and Watch, like YafYaf's: the search and the dropdowns over the rows
    ═══════════════════════════════════════════════════════════════════════ */
 
-#notes-controls,
+#items-controls,
 #stats-controls {
     height: auto;
     background: transparent;
 }
 
-#notes-list #search {
+#items-list #search {
     width: 1fr;
     background: $bg;
     color: $fg;
     border: solid $gutter;
 }
 
-#notes-list #search:focus {
+#items-list #search:focus {
     border: solid $blue;
 }
 
 /* The dropdowns are boxed like the search field next to them; their overlay opens below */
-#notes-controls Select,
+#items-controls Select,
 #stats-controls Select {
     height: 3;
     margin: 0 0 0 2;
@@ -67,15 +67,15 @@
     width: 18;
 }
 
-#notes-controls #tag-selector {
+#items-controls #tag-selector {
     width: 30;
 }
 
-#notes-controls #todo-status {
+#items-controls #status-selector {
     width: 14;
 }
 
-#notes-controls Select SelectCurrent,
+#items-controls Select SelectCurrent,
 #stats-controls Select SelectCurrent {
     background: $bg;
     border: solid $gutter;
@@ -83,12 +83,12 @@
     color: $fg;
 }
 
-#notes-controls Select:focus SelectCurrent,
+#items-controls Select:focus SelectCurrent,
 #stats-controls Select:focus SelectCurrent {
     border: solid $blue;
 }
 
-#notes-controls Select SelectOverlay,
+#items-controls Select SelectOverlay,
 #stats-controls Select SelectOverlay {
     background: $bg-dark;
     border: none;
@@ -96,7 +96,7 @@
     scrollbar-size: 0 0;
 }
 
-#notes-controls Select SelectOverlay > .option-list--option-highlighted,
+#items-controls Select SelectOverlay > .option-list--option-highlighted,
 #stats-controls Select SelectOverlay > .option-list--option-highlighted {
     background: $bg-light;
     color: $fg;
@@ -104,22 +104,22 @@
 }
 
 /* The search box is 3 rows with its border; the top margin lines the button up with its text */
-#notes-controls .tinted {
+#items-controls .tinted {
     margin: 1 0 0 3;
 }
 
-#notes-status {
+#items-status {
     width: 1fr;
     height: 1;
     color: $green;
 }
 
-#notes-rule {
+#items-rule {
     height: 1;
     color: $comment;
 }
 
-#notes-table {
+#items-table {
     height: 1fr;
     background: transparent;
     color: $fg;
@@ -133,17 +133,17 @@
     overflow-x: hidden;
 }
 
-#notes-table > .datatable--cursor {
+#items-table > .datatable--cursor {
     background: $bg-light;
     color: auto;
     text-style: none;
 }
 
-#notes-table > .datatable--hover {
+#items-table > .datatable--hover {
     background: transparent;
 }
 
-#notes-list {
+#items-list {
     height: 1fr;
 }
 
@@ -151,7 +151,7 @@
    DETAIL - one note, todo or watch item in place of the list: its header, then its markdown
    ═══════════════════════════════════════════════════════════════════════ */
 
-#note-detail {
+#item-detail {
     display: none;
     height: 1fr;
 }
@@ -159,7 +159,7 @@
 /* One line, then a blank one before the content: the breadcrumbs' "Todos >", a link back to the
    list as in maison, the id, when it was created or updated, a watch item's icons; on the right the
    box, the star, Edit and Delete */
-#note-detail-header {
+#item-detail-header {
     height: 1;
     margin-bottom: 1;
     color: $comment;
@@ -180,35 +180,35 @@
     color: $comment;
 }
 
-#note-detail-id {
+#item-detail-id {
     width: auto;
     margin-right: 2;
     color: $fg;
 }
 
-#note-detail-date {
+#item-detail-date {
     width: auto;
     color: $green;
 }
 
-#note-detail-links {
+#item-detail-links {
     width: auto;
     margin-left: 2;
 }
 
-#note-detail-header .spacer {
+#item-detail-header .spacer {
     width: 1fr;
 }
 
-#note-detail-done {
+#item-detail-done {
     width: 3;
 }
 
-#note-detail-pin {
+#item-detail-pin {
     width: 3;
 }
 
-#note-detail-pin.-pinned {
+#item-detail-pin.-pinned {
     color: $yellow;
 }
 
@@ -218,7 +218,7 @@
     margin: 0 0 0 1;
 }
 
-#note-detail-scroll {
+#item-detail-scroll {
     height: 1fr;
     scrollbar-size-vertical: 1;
     scrollbar-background: $bg;
@@ -230,13 +230,13 @@
 }
 
 /* Textual's markdown styles use its own theme variables; map them onto the palette, as yafyaf-tui does */
-#note-detail-markdown {
+#item-detail-markdown {
     padding: 0;
     color: $fg;
 }
 
 /* Link styles do not inherit, so they go on the blocks that hold the text */
-#note-detail-markdown MarkdownBlock {
+#item-detail-markdown MarkdownBlock {
     link-color: $blue;
     link-background: transparent;
     link-style: none;
@@ -245,33 +245,33 @@
     link-style-hover: underline;
 }
 
-#note-detail-markdown MarkdownHeader {
+#item-detail-markdown MarkdownHeader {
     color: $yellow;
     text-style: bold;
     margin: 1 0 1 0;
 }
 
-#note-detail-markdown MarkdownH1 {
+#item-detail-markdown MarkdownH1 {
     content-align: left middle;
     background: transparent;
     margin: 0 0 1 0;
 }
 
-#note-detail-markdown MarkdownBlock > .code_inline {
+#item-detail-markdown MarkdownBlock > .code_inline {
     background: transparent;
     color: $orange;
 }
 
-#note-detail-markdown MarkdownFence {
+#item-detail-markdown MarkdownFence {
     background: $bg-dark;
 }
 
-#note-detail-markdown MarkdownBlockQuote {
+#item-detail-markdown MarkdownBlockQuote {
     background: $bg-dark;
     border-left: outer $comment;
 }
 
-#note-detail-markdown MarkdownHorizontalRule {
+#item-detail-markdown MarkdownHorizontalRule {
     color: $gutter;
 }
 

@@ -9,7 +9,7 @@ from textual.widgets import Markdown
 from textual.widgets.markdown import MarkdownBlock
 
 from ..notes import find_tags
-from .notes_table import TagSelected
+from .items_table import TagSelected
 
 
 def _with_hyperlink(style: Style | str) -> Style | str:

@@ -12,7 +12,7 @@ from textual.message import Message
 from textual.widgets import DataTable
 from tui_kit.shortcuts import ACTIONS, GENERAL
 
-from ..notes import HEADING, TODO, Note, find_tags
+from ..notes import HEADING, Note, find_tags
 from ..watch.view import Group, WatchItem
 
 # What a row of the table shows: a note, a todo, or a watch item, which reads like a todo
@@ -138,12 +138,7 @@ def row_key(row: Row) -> str:
     return row.row_key
 
 
-def lead_width(kind: str) -> int:
-    """A todo's check box, two spaces, the star; a note has only the star."""
-    return 4 if kind == TODO else 1
-
-
-class NotesTable(DataTable):
+class ItemsTable(DataTable):
     """One row per note, todo or watch item, keyed by row_key, and the Watch tab's headings and blank
     rows, which the cursor skips. A click on the check box or the star changes the item, on a tag
     filters the list, on a link opens it.
@@ -157,11 +152,12 @@ class NotesTable(DataTable):
         Binding("k", "cursor_up", "Move up", show=False, group=GENERAL),
     ]
 
-    def __init__(self, kind: str, colors: ListColors, **kwargs) -> None:
+    def __init__(self, has_box: bool, colors: ListColors, **kwargs) -> None:
         super().__init__(
             cursor_type="row", zebra_stripes=False, show_header=False, cursor_foreground_priority="renderable", cell_padding=0, **kwargs
         )
-        self.kind = kind
+        # A check box before each star: the items can be done
+        self.has_box = has_box
         self._colors = colors
         # What show was given, to show again in new colors
         self._shown: list[Group | ListItem] = []
@@ -169,13 +165,14 @@ class NotesTable(DataTable):
         self.lines: list[Row] = []
         # Clicks on a todo's box and star column left of this x, from the column's start, hit the box:
         # the cell's space, the box and the next space
-        self._star_x = 3 if kind == TODO else 0
+        self._star_x = 3 if has_box else 0
         # The longest id shown, which the id column fits
         self._id_digits = 1
 
     def on_mount(self) -> None:
         self.add_column("", key="id", width=3)
-        self.add_column("", key="lead", width=lead_width(self.kind) + 2)
+        # The box, two spaces and the star, or the star alone; and the cell's own spaces
+        self.add_column("", key="lead", width=(4 if self.has_box else 1) + 2)
         self.add_column("Summary", key="summary")
 
     @property
@@ -289,7 +286,7 @@ class NotesTable(DataTable):
 
     def _lead(self, item: ListItem) -> Text:
         text = Text(" ", style=self._colors.date)
-        if item.is_todo:
+        if self.has_box:
             text.append(DONE if item.done else OPEN)
             text.append("  ")
         text.append(PINNED if item.pinned else UNPINNED, style=self._colors.heading if item.pinned else self._colors.date)

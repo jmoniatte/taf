@@ -28,7 +28,7 @@ from taf.notes import (
     update_note,
     without_tags,
 )
-from taf.widgets.notes_table import ListColors, summary_text
+from taf.widgets.items_table import ListColors, summary_text
 
 
 class TagsTest(unittest.TestCase):

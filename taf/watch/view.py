@@ -37,8 +37,6 @@ class WatchItem:
     updated_at: datetime
     project: str | None = None
     tags: tuple[str, ...] = ()
-    # The table draws a check box for it, as for a todo
-    is_todo = True
 
     @property
     def done(self) -> bool:

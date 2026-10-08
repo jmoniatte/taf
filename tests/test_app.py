@@ -18,7 +18,7 @@ from taf.logs import create_log
 from taf.message import Inference
 from taf.notes import TODO, create_note
 from taf.widgets.stats_view import ALL_ACTIONS
-from taf.widgets import WatchTab, LogsScroll, LogsView, NotesTable, StatsScroll, StatsView, TodosTab
+from taf.widgets import WatchTab, LogsScroll, LogsView, ItemsTable, StatsScroll, StatsView, TodosTab
 from taf.widgets.logs_view import HINT, NewLogScreen
 from test_notes_view import python_editor, suspend, writes
 
@@ -88,7 +88,7 @@ class AppTest(unittest.TestCase):
             await pilot.press("tab")
             await pilot.pause()
             self.assertEqual((app.tab, tabs.active), ("notes", "notes-tab"))
-            self.assertIsInstance(app.focused, NotesTable)
+            self.assertIsInstance(app.focused, ItemsTable)
             await pilot.press("tab")
             await pilot.pause()
             self.assertEqual((app.tab, tabs.active), ("logs", "logs-tab"))

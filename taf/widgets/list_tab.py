@@ -8,8 +8,8 @@ from textual.app import ComposeResult
 from textual.containers import Vertical
 
 from .list_view import ItemOpened, ListView
-from .note_detail import NoteDetail, ViewClosed
-from .notes_table import ItemChangeRequested, ListItem, NotesTable
+from .item_detail import ItemDetail, ViewClosed
+from .items_table import ItemChangeRequested, ListItem, ItemsTable
 
 
 class ListTab(Vertical):
@@ -17,7 +17,7 @@ class ListTab(Vertical):
     to read an item again (fetch)."""
 
     LIST: type[ListView] = ListView
-    DETAIL: type[NoteDetail] = NoteDetail
+    DETAIL: type[ItemDetail] = ItemDetail
     # Help's title for the list
     TITLE = ""
 
@@ -28,16 +28,16 @@ class ListTab(Vertical):
 
     def compose(self) -> ComposeResult:
         # The same ids in every tab, for their styles: a test scopes its queries to the tab
-        yield self.LIST(id="notes-list")
-        yield self.DETAIL(self.app.palette["purple"], id="note-detail")
+        yield self.LIST(id="items-list")
+        yield self.DETAIL(self.app.palette["purple"], id="item-detail")
 
     @property
     def list(self) -> ListView:
         return self.query_one(ListView)
 
     @property
-    def detail(self) -> NoteDetail:
-        return self.query_one(NoteDetail)
+    def detail(self) -> ItemDetail:
+        return self.query_one(ItemDetail)
 
     @property
     def database(self) -> sqlite3.Connection | None:
@@ -50,7 +50,7 @@ class ListTab(Vertical):
         """The title and the keys of Help's right column: the list's, or the item's while one is on show."""
         if self.viewing is not None:
             return self.DETAIL.NOUN.capitalize(), (self.DETAIL.BINDINGS,)
-        return self.TITLE, (self.LIST.BINDINGS, NotesTable.BINDINGS)
+        return self.TITLE, (self.LIST.BINDINGS, ItemsTable.BINDINGS)
 
     def tab_shown(self) -> None:
         if self.viewing is not None:

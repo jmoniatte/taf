@@ -8,7 +8,7 @@ from taf.notes import long_date
 from taf.watch.items import Item, get_item, now, record_run, save_item
 from taf.watch.projects import add_project
 from taf.watch.view import load_item
-from taf.widgets import CollectControl, NotesTable, WatchDetail, WatchTab
+from taf.widgets import CollectControl, ItemsTable, WatchDetail, WatchTab
 from test_notes_view import AppCase, header
 
 
@@ -24,13 +24,13 @@ class WatchTabTest(AppCase):
             tab = app.query_one("#watch-view", WatchTab)
             await pilot.press("r")
             await pilot.pause()
-            table = tab.query_one(NotesTable)
+            table = tab.query_one(ItemsTable)
             lines = ["".join(str(cell) for cell in table.get_row_at(row)).rstrip() for row in range(table.row_count)]
             # A heading per project from the left edge, a blank row between them; each item with its id
             self.assertEqual(lines, [
                 " follow (1)", " 1  \U000f0131  ☆  Answer Kevin  \U000f04b1", "", " No project (1)", " 2  \U000f0131  ☆  CI fails on r#1  \uf2ec  \U000f02a4",
             ])
-            self.assertEqual(str(tab.query_one("#notes-status", Static).render()), "2 open items")
+            self.assertEqual(str(tab.query_one("#items-status", Static).render()), "2 open items")
             # The cursor starts on an item, never a heading; j skips the blank row and the heading
             self.assertEqual(table.cursor_row, 1)
             await pilot.press("j")
@@ -52,24 +52,24 @@ class WatchTabTest(AppCase):
             # Done ones leave the open list on the next load; f shows them
             await pilot.press("r")
             await pilot.pause()
-            self.assertEqual(str(tab.query_one("#notes-status", Static).render()), "1 open item")
+            self.assertEqual(str(tab.query_one("#items-status", Static).render()), "1 open item")
             await pilot.press("f")
             await pilot.pause()
-            self.assertEqual(str(tab.query_one("#notes-status", Static).render()), "1 done item")
+            self.assertEqual(str(tab.query_one("#items-status", Static).render()), "1 done item")
 
             # Enter shows it in full, without Edit or Delete; its box closes it again
             await pilot.press("enter")
             await pilot.pause()
             detail = tab.query_one(WatchDetail)
             self.assertTrue(detail.display)
-            self.assertEqual(str(detail.query_one("#note-detail-id", Static).render()), "#1")
+            self.assertEqual(str(detail.query_one("#item-detail-id", Static).render()), "#1")
             # One line: "Watch >", a link back, the id, when it was saved, Slack's icon, then the box and the star
             created = long_date(load_item(self.db, 1).created_at)
             self.assertEqual(header(detail), f"Watch > #1 Created {created} \U000f04b1 \U000f0132 ★")
-            links = [span.style.link for span in detail.query_one("#note-detail-links", Static).render().spans]
+            links = [span.style.link for span in detail.query_one("#item-detail-links", Static).render().spans]
             self.assertEqual(links, ["https://slack/1"])
             self.assertFalse(detail.query("#btn-edit") or detail.query("#btn-delete"))
-            await pilot.click("#watch-view #note-detail-done")
+            await pilot.click("#watch-view #item-detail-done")
             await pilot.pause()
             self.assertEqual(get_item(self.db, 1)["status"], "open")
             await pilot.press("escape")
@@ -90,7 +90,7 @@ class WatchTabTest(AppCase):
             self.assertEqual(heading.rstrip(), " Pull Requests (1) - 8 PRs ready to deploy")
             x = heading.index("8 PRs")
             with patch.object(app, "open_url") as opened:
-                await pilot.click("#watch-view #notes-table", offset=(x, 0))
+                await pilot.click("#watch-view #items-table", offset=(x, 0))
                 await pilot.pause()
             opened.assert_called_once_with("https://gh/ready")
             self.assertEqual(table.cursor_row, 1)

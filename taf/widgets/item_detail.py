@@ -6,10 +6,9 @@ from textual.message import Message
 from textual.widgets import Button, Static
 from tui_kit.shortcuts import ACTIONS, GENERAL
 
-from ..notes import NOTE, TODO
 from .buttons import flat_button
 from .note_markdown import NoteMarkdown
-from .notes_table import DONE, OPEN, PINNED, UNPINNED, ItemChangeRequested, ListItem, link_icons, list_colors
+from .items_table import DONE, OPEN, PINNED, UNPINNED, ItemChangeRequested, ListItem, link_icons, list_colors
 from .notes_view import EditRequested
 
 
@@ -66,17 +65,16 @@ def detail_bindings(noun: str, editable: bool = True) -> list[Binding]:
     ]
 
 
-class NoteDetail(Vertical):
+class ItemDetail(Vertical):
     """One note, todo or watch item in place of the list: a header line, then its content as markdown.
     The header: the breadcrumbs' "Notes >" (CRUMB), a link back to the list as in maison, the id, when
-    it was created or updated, a watch item's icons; on the right, the check box (KIND todo) and the
-    star, as in the list, which a click toggles, then Edit and Delete (when EDITABLE)."""
+    it was created or updated, a watch item's icons; on the right, the check box (HAS_DONE) and the
+    star, as in the list, which a click toggles, then Edit and Delete (EDITABLE)."""
 
-    KIND = NOTE
-    NOUN = "note"
-    CRUMB = "Notes"
+    NOUN = ""
+    CRUMB = ""
+    HAS_DONE = False
     EDITABLE = True
-    BINDINGS = detail_bindings(NOUN)
 
     def __init__(self, tag_color: str = "", **kwargs) -> None:
         super().__init__(**kwargs)
@@ -84,21 +82,21 @@ class NoteDetail(Vertical):
         self._tag_color = tag_color
 
     def compose(self) -> ComposeResult:
-        with Horizontal(id="note-detail-header"):
+        with Horizontal(id="item-detail-header"):
             yield Static(self.CRUMB, id="breadcrumb-list")
             yield Static(">", classes="breadcrumb-separator")
-            yield Static("", id="note-detail-id")
-            yield Static("", id="note-detail-date")
-            yield LinkIcons("", id="note-detail-links")
+            yield Static("", id="item-detail-id")
+            yield Static("", id="item-detail-date")
+            yield LinkIcons("", id="item-detail-links")
             yield Static("", classes="spacer")
-            if self.KIND == TODO:
-                yield DoneBox("", id="note-detail-done")
-            yield PinStar("", id="note-detail-pin")
+            if self.HAS_DONE:
+                yield DoneBox("", id="item-detail-done")
+            yield PinStar("", id="item-detail-pin")
             if self.EDITABLE:
                 yield flat_button("Edit", "btn-edit", classes="tinted")
                 yield flat_button("Delete", "btn-delete", classes="tinted -red")
-        with VerticalScroll(id="note-detail-scroll"):
-            yield NoteMarkdown(tag_color=self._tag_color, id="note-detail-markdown")
+        with VerticalScroll(id="item-detail-scroll"):
+            yield NoteMarkdown(tag_color=self._tag_color, id="item-detail-markdown")
 
     def show(self, item: ListItem) -> None:
         self.show_header(item)
@@ -111,8 +109,8 @@ class NoteDetail(Vertical):
         for box in self.query(DoneBox):
             box.show(item)
         self.query_one(PinStar).show(item)
-        self.query_one("#note-detail-id", Static).update(f"#{item.id}")
-        self.query_one("#note-detail-date", Static).update(item.date_text)
+        self.query_one("#item-detail-id", Static).update(f"#{item.id}")
+        self.query_one("#item-detail-date", Static).update(item.date_text)
         self.query_one(LinkIcons).update(link_icons(item.links, list_colors(self.app.palette)))
 
     def focus_content(self) -> None:
@@ -130,12 +128,12 @@ class NoteDetail(Vertical):
     def _crumb_clicked(self) -> None:
         self.action_close()
 
-    @on(events.Click, "#note-detail-done")
+    @on(events.Click, "#item-detail-done")
     def _box_clicked(self) -> None:
         if self.item is not None:
             self.post_message(ItemChangeRequested(self.item, done=not self.item.done))
 
-    @on(events.Click, "#note-detail-pin")
+    @on(events.Click, "#item-detail-pin")
     def _star_clicked(self) -> None:
         if self.item is not None:
             self.post_message(ItemChangeRequested(self.item, pinned=not self.item.pinned))
@@ -173,10 +171,16 @@ class NoteDetail(Vertical):
         self.query_one(VerticalScroll).scroll_up()
 
 
-class TodoDetail(NoteDetail):
-    """One todo: a note with its check box before the star."""
+class NoteDetail(ItemDetail):
+    NOUN = "note"
+    CRUMB = "Notes"
+    BINDINGS = detail_bindings(NOUN)
 
-    KIND = TODO
+
+class TodoDetail(ItemDetail):
+    """A note's view with its check box before the star."""
+
     NOUN = "todo"
     CRUMB = "Todos"
+    HAS_DONE = True
     BINDINGS = detail_bindings(NOUN)

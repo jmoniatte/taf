@@ -96,7 +96,7 @@ taf/                       # git root + pyproject.toml (run uv commands here)
       view.py           #   the Watch tab's list: WatchItem, grouped by project
     screens/            # TafHelpScreen: Help with the app's keys and the tab's own, as in outils
     widgets/            # One view per tab. Notes, Todos and Watch are list_tab.py's ListTab: the list (list_view.py's ListView,
-                        # rows in notes_table.py) or one item in its place (note_detail.py, in note_markdown.py); notes_tab.py and
+                        # rows in items_table.py) or one item in its place (item_detail.py, in note_markdown.py); notes_tab.py and
                         # notes_view.py for notes and todos, watch_tab.py for watch items, collect.py the footer's Collect;
                         # logs_view.py and stats_view.py;
                         # dashed_rule.py, the rule under the lists' count, copied from yafyaf-tui
@@ -127,16 +127,17 @@ Help comes back once it clears. Copied from outils.
 Todos and notes are one table, `notes`, and one model, `notes.Note`: a todo is a note whose `kind`
 is `todo` (`notes.TODO`), a plain note's is `note` (`notes.NOTE`). Every function in `notes.py`
 takes the kind where it lists (`list_notes`, `tag_counts`); `set_done` leaves a plain note alone.
-The widgets are the same too: `NotesTab`, `NotesView`, `NoteDetail` and `NotesTable` are for
-notes, and `TodosTab`, `TodosView` and `TodoDetail` subclass them with `KIND = TODO`, adding the
-status (see Notes for what differs). This section says "todo", but all of it holds for a note
+The widgets are the same too: `NotesTab` and `NotesView` are for notes, and `TodosTab` and
+`TodosView` subclass them with `KIND = TODO` and `HAS_DONE` (the check box, `x` and the status);
+`NoteDetail` and `TodoDetail` are `ItemDetail`s, the second with `HAS_DONE`; all of them show their
+rows in `ItemsTable` (see Notes for what differs). This section says "todo", but all of it holds for a note
 unless Notes says otherwise.
 
 The Todos tab is YafYaf's yaf list (yafyaf-tui's `YafsView`) on the local database, and the todos
 YafYaf had for a while (kept in a stash in yafyaf-tui and yafyaf, "Todos tab" and "Todos API").
 `TodosView` is a search box, the Tags dropdown, the status dropdown (Open, Done, All) and New
 Todo, over the count in green ("2 open todos", "1 todo matching 'x'"), a dashed rule
-(`DashedRule`) and `NotesTable`, which has no header. A row is the id in `$fg` (the table's color), a check box and a star (Nerd Font `󰄱`/`󰄲`, `☆`/`★`), then
+(`DashedRule`) and `ItemsTable`, which has no header. A row is the id in `$fg` (the table's color), a check box and a star (Nerd Font `󰄱`/`󰄲`, `☆`/`★`), then
 the summary: the first line with text, links by their label in blue, inline
 code without its backticks in orange (as in the view), a markdown heading without its `#`s in yellow, tags in purple, then the todo's tags that are not
 in that first line (`Note.tags`, from the whole content) in cyan, clickable like the others;
@@ -174,8 +175,8 @@ says when the content last changed.
 `TodosTab` (`widgets/notes_tab.py`) is what the tab holds: the list (`TodosView`) or, in its
 place, one todo (`TodoDetail`), as yafyaf-tui's `MainArea` switches between its list and
 `YafDetail`; `NotesTab.viewing` is the todo on show, or None. The views of a todo, a note and a
-watch item share one layout (`NoteDetail`): a header line, then the content as markdown. The header
-starts with breadcrumbs, as maison's todo page does: "Todos >" (`NoteDetail.CRUMB`; "Notes >",
+watch item share one layout (`ItemDetail`): a header line, then the content as markdown. The header
+starts with breadcrumbs, as maison's todo page does: "Todos >" (`ItemDetail.CRUMB`; "Notes >",
 "Watch >"), in blue, a link back to the list; then the id, "#12"; then, in green, "Created Today at
 3:09pm" while the content never changed, else "Updated Yesterday at 3:09pm" (`notes.date_line`,
 `notes.long_date`: Today, Yesterday, or "October 5, 2026", always with the time; a watch item's is
@@ -208,14 +209,14 @@ it stays the same if a note's kind changes.
 ## Notes
 
 The Notes tab (`NotesTab`) is the Todos tab without the status: no check box in a row or in the
-view (only the star, so its column is 1 wide, `notes_table.lead_width`), no status
+view (only the star, as its `ItemsTable` has no box, `has_box`), no status
 dropdown, no `x` or `f`, no `is:` in the search (typed, it is ignored), no `done_at` in the
 editor's front matter. Notes are pinned and deleted like todos. A note may have many tags, so
 picking a tag (`NotesView.add_tag`) adds it to the search rather than replacing the one there, and
 Any tag takes them all out; the Tags dropdown shows the search's last tag. `TodosView.add_tag`
 keeps the todos' one tag. Both tabs share the footer's Refresh, which acts on the tab on show
 (`TafApp.active_view`). The ids inside the two tabs are the same
-(`#notes-list`, `#search`, `#note-detail`...), so a test scopes its queries to the tab
+(`#items-list`, `#search`, `#item-detail`...), so a test scopes its queries to the tab
 (`app.query_one("#todos-view")`); `AppCase.TAB` in `tests/test_notes_view.py` is the tab a test
 starts on.
 
@@ -232,12 +233,12 @@ project); after its count, "8 PRs ready to deploy" links to the open PRs of the 
 after Collect; it is never stored, and the heading shows alone when there is no review but PRs are
 ready. Then comes a heading per project, the project with the latest activity first and "No project"
 last; inside one, pinned first,
-then the latest first (`watch.view.grouped`). It reuses `NotesTable` and `NoteDetail`: a
+then the latest first (`watch.view.grouped`). It reuses `ItemsTable` and `ItemDetail`: a
 `WatchItem` has what the table and the view read from a `Note` (`summary`, `content`, `tags`,
 `pinned`, `done`, `links`, `gray`, `row_key`, `date_text`), so they show it like a todo, with no
 check on its type. The table has no cell padding of its
 own: each cell carries its spaces, so a heading starts at the row's left edge, cut where the columns
-meet (`NotesTable._heading`), and a blank row (`Spacer`) comes before each heading but the first.
+meet (`ItemsTable._heading`), and a blank row (`Spacer`) comes before each heading but the first.
 The cursor skips headings and blank rows. A row starts with the item's id, as a todo's does (another
 count than the todos': `taf watch show 12`, not `taf todo show 12`),
 and ends with Nerd Font icons that a click opens (`WatchItem.links`, `LINK_ICONS`): where

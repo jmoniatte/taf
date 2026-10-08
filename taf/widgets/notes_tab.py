@@ -5,8 +5,8 @@ from tui_kit.dialog import ConfirmDialog
 from ..editor import EditorError, edit_text, with_front_matter, without_front_matter
 from ..notes import NOTE, TODO, Note, create_note, delete_note, front_matter, get_note, update_note
 from .list_tab import ListTab
-from .note_detail import DeleteRequested, NoteDetail, TodoDetail
-from .notes_table import TagSelected
+from .item_detail import DeleteRequested, NoteDetail, TodoDetail
+from .items_table import TagSelected
 from .notes_view import EditRequested, NewNoteRequested, NotesView, TodosView
 
 

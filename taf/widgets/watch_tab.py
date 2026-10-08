@@ -7,7 +7,6 @@ from textual import work
 from textual.binding import Binding
 from tui_kit.shortcuts import ACTIONS
 
-from ..notes import TODO
 from ..watch.config import from_taf
 from ..watch.github import ready_to_deploy
 from ..watch import view
@@ -15,7 +14,7 @@ from ..watch.view import Group, WatchItem
 from .collect import CollectControl
 from .list_tab import ListTab
 from .list_view import ListView
-from .note_detail import NoteDetail, detail_bindings
+from .item_detail import ItemDetail, detail_bindings
 
 # How often the list reads again what the watch timer may have added
 RELOAD_SECONDS = 60
@@ -27,9 +26,8 @@ class WatchView(ListView):
     """The list: the items under a heading per project, the reviews first with how many PRs are ready
     to deploy. While the tab is on show, it reads again every minute and asks GitHub every 5."""
 
-    KIND = TODO
     NOUN = "item"
-    HAS_STATUS = True
+    HAS_DONE = True
     BINDINGS = [
         Binding("x", "toggle_done", "Mark done, or not done", group=ACTIONS),
         Binding("p", "toggle_pin", "Pin, or unpin", group=ACTIONS),
@@ -98,12 +96,12 @@ class WatchView(ListView):
             self.load()
 
 
-class WatchDetail(NoteDetail):
+class WatchDetail(ItemDetail):
     """One item in full; Slack or GitHub is where it changes, so no Edit or Delete."""
 
-    KIND = TODO
     NOUN = "item"
     CRUMB = "Watch"
+    HAS_DONE = True
     EDITABLE = False
     BINDINGS = detail_bindings(NOUN, editable=False)
 
