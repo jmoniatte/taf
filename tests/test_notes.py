@@ -1,18 +1,22 @@
 import sqlite3
 import tempfile
 import unittest
+from datetime import datetime
 from pathlib import Path
 
 from taf.database import open_database
 from taf.notes import (
     NOTE,
     TODO,
+    Note,
     create_note,
+    date_line,
     delete_note,
     find_tags,
     front_matter,
     get_note,
     list_notes,
+    long_date,
     set_done,
     set_pinned,
     split_query,
@@ -148,3 +152,15 @@ class SearchWordsTest(unittest.TestCase):
         self.assertEqual(split_status("fix IS:Closed"), ("done", "fix"))
         self.assertEqual(split_status("is:done is:open x"), ("open", "x"))
         self.assertEqual(split_status("this:open"), ("all", "this:open"))
+
+class DateTest(unittest.TestCase):
+    def test_dates_have_a_time_and_say_created_or_updated(self) -> None:
+        now = datetime(2026, 10, 7, 18, 0)
+        self.assertEqual(long_date(datetime(2026, 10, 7, 15, 9), now), "Today at 3:09pm")
+        self.assertEqual(long_date(datetime(2026, 10, 6, 0, 5), now), "Yesterday at 12:05am")
+        self.assertEqual(long_date(datetime(2026, 10, 5, 12, 30), now), "October 5, 2026 at 12:30pm")
+        created = datetime(2026, 9, 5, 9, 0)
+        note = Note(1, TODO, "x", (), False, None, created, created)
+        self.assertEqual(date_line(note), "Created September 5, 2026 at 9:00am")
+        changed = Note(1, TODO, "x", (), False, None, created, datetime(2026, 9, 6, 10, 0))
+        self.assertEqual(date_line(changed), "Updated September 6, 2026 at 10:00am")

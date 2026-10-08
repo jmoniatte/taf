@@ -87,6 +87,19 @@ class ItemsTest(Case):
         self.assertEqual(set_done(self.db, [999]), [999])
 
 
+def graphql(login: str, prs: list[tuple[dict, dict]], requests: dict | None = None) -> dict:
+    """GitHub's answer to github.QUERY: the user's PRs, each (pr, view) as the old gh calls gave them,
+    and the review searches' PRs by alias."""
+    def node(pr, view):
+        rollup = {"contexts": {"nodes": view.get("statusCheckRollup") or []}}
+        return {**pr, "headRefName": view["headRefName"], "comments": {"nodes": view["comments"]},
+                "reviews": {"nodes": view["reviews"]}, "commits": {"nodes": [{"commit": {"statusCheckRollup": rollup}}]}}
+
+    data = {"viewer": {"login": login, "pullRequests": {"nodes": [node(pr, view) for pr, view in prs]}}}
+    data.update({alias: {"nodes": found} for alias, found in (requests or {}).items()})
+    return {"data": data}
+
+
 class GithubTest(Case):
     def test_sync_names_projects_from_branches_and_archives_finished_ones(self):
         projects.add_project(self.db, "follow-privacy-levels", "Followers privacy", ["friends-follow"])
@@ -96,14 +109,8 @@ class GithubTest(Case):
 
         def gh(args):
             calls.append(args)
-            if args[1] == "api":
-                return {"login": "jean"}
-            if "--author" in args:
-                return [{"url": url, "number": int(url[-1]), "title": f"PR {url[-1]}", "repository": {"name": "r"}}
-                        for url in open_urls]
-            if args[1] == "search":
-                return []
-            return {"headRefName": branches[args[3]], "comments": [], "reviews": [], "statusCheckRollup": []}
+            return graphql("jean", [({"url": url, "number": int(url[-1]), "title": f"PR {url[-1]}", "repository": {"name": "r"}},
+                                     {"headRefName": branches[url], "comments": [], "reviews": []}) for url in open_urls])
 
         open_urls = ["u/1", "u/2", "u/3", "u/4"]
         report = github.sync(self.db, run=gh)
@@ -120,7 +127,8 @@ class GithubTest(Case):
         # An open item keeps its project going after the PRs close
         save_item(self.db, Item("slack", "C9:1", "action", "Fix the other typos", project="fix-typo"))
         report = github.sync(self.db, run=gh)
-        self.assertEqual((len(calls), report.archived), (5, 1))
+        # One request to GitHub a sync
+        self.assertEqual((len(calls), calls[0][:3], report.archived), (1, ["gh", "api", "graphql"], 1))
         self.assertEqual({p.name for p in projects.list_projects(self.db)} & {"strong-params", "fix-typo"}, {"fix-typo"})
         self.assertEqual(github.sync(self.db, run=lambda a: (_ for _ in ()).throw(RuntimeError("no gh"))).error,
                          "github: no gh")
@@ -145,24 +153,21 @@ class GithubTest(Case):
         }
         request = {"url": "u/9", "number": 9, "title": "Fix maps", "repository": {"name": "r"},
                    "author": {"login": "kim"}, "createdAt": "2026-10-01T08:00:00Z"}
-        searches = []
-
         def gh(args):
-            if args[1] == "api":
-                return {"login": "jean"}
-            if "--author" in args:
-                return [pr] if prs_open else []
-            if args[1] == "search":
-                searches.append(args)
-                return [request] if requested and "team-review-requested:org/rails" in args else []
-            return view
+            return graphql("jean", [(pr, view)] if prs_open else [], {"team0": [request] if requested else []})
 
         prs_open, requested = True, True
         config = GithubConfig(review_teams=["org/rails"], ignore_users=["ridebot"])
         report = github.sync(self.db, config, run=gh)
         self.assertEqual(report.found, ["Review r#9 Fix maps", "r#1: pat requested changes and commented",
                                         "CI fails on r#1: spec_tests"])
-        self.assertIn("-reviewed-by:@me", searches[1])
+        self.assertIn("team-review-requested:org/rails -reviewed-by:@me", github.query(config.review_teams))
+        # Nothing new on GitHub: nothing saved again
+        stamp = list_items(self.db, source="github")[0]["updated_at"]
+        self.db.execute("UPDATE watch_items SET updated_at = '2000-01-01'")
+        self.assertEqual(github.sync(self.db, config, run=gh).found, [])
+        self.assertEqual({r["updated_at"] for r in list_items(self.db, source="github")}, {"2000-01-01"})
+        self.assertNotEqual(stamp, "2000-01-01")
         rows = {r["key"]: r for r in list_items(self.db, source="github")}
         self.assertEqual(rows["review:u/9"]["details"], "Review requested from team rails; opened by kim.")
         self.assertEqual((rows["replies:u/1"]["kind"], rows["replies:u/1"]["project"]), ("action", "follows"))

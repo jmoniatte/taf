@@ -1,16 +1,18 @@
+from rich.style import Style
+from rich.text import Text
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.message import Message
-from textual import on
+from textual import events, on
 from textual.widgets import Button, Static
 from tui_kit.shortcuts import ACTIONS, GENERAL
 
 from ..watch.view import WatchItem
-from ..notes import NOTE, TODO, long_date
+from ..notes import NOTE, TODO, date_line, long_date
 from .buttons import flat_button
 from .note_markdown import NoteMarkdown
-from .notes_table import DONE, OPEN, PINNED, UNPINNED, Entry, NoteChangeRequested
+from .notes_table import DONE, LINK_ICONS, OPEN, PINNED, UNPINNED, Entry, NoteChangeRequested
 from .notes_view import EditRequested
 
 
@@ -55,6 +57,15 @@ class PinStar(Static):
             self.post_message(NoteChangeRequested(note, pinned=not note.pinned))
 
 
+class LinkIcons(Static):
+    """A watch item's icons, as at the end of its row in the list: a click on one opens its page."""
+
+    def on_click(self, event: events.Click) -> None:
+        if event.style.link:
+            event.stop()
+            self.app.open_url(event.style.link)
+
+
 def detail_bindings(kind: str) -> list[Binding]:
     return [
         Binding("escape", "close", "Back to the list", group=ACTIONS),
@@ -70,11 +81,13 @@ def detail_bindings(kind: str) -> list[Binding]:
 
 class NoteDetail(Vertical):
     """One note rendered as markdown in place of the list, under a line with its id and star, as in
-    the list, when it was last updated, and Close, Edit and Delete on the right. TodoDetail adds the
+    the list, when it was last updated, and Edit and Delete on the right. TodoDetail adds the
     check box."""
 
     KIND = NOTE
     BINDINGS = detail_bindings(NOTE)
+    # The breadcrumbs' first step, "Notes >", as in maison's todo page: a link back to the list
+    CRUMB = "Notes"
 
     def __init__(self, tag_color: str = "", **kwargs) -> None:
         super().__init__(**kwargs)
@@ -82,13 +95,18 @@ class NoteDetail(Vertical):
         self._tag_color = tag_color
 
     def compose(self) -> ComposeResult:
+        # One line: "Todos > #37 Created Today at 3:09pm", a watch item's icons; on the right, the box
+        # and the star as in the list, then Edit and Delete
         with Horizontal(id="note-detail-header"):
+            yield Static(self.CRUMB, id="breadcrumb-list")
+            yield Static(">", classes="breadcrumb-separator")
             yield Static("", id="note-detail-id")
+            yield Static("", id="note-detail-date")
+            yield LinkIcons("", id="note-detail-links")
+            yield Static("", classes="spacer")
             if self.KIND == TODO:
                 yield DoneBox("", id="note-detail-done")
             yield PinStar("", id="note-detail-pin")
-            yield Static("", id="note-detail-date")
-            yield flat_button("Close", "btn-close-note")
             yield flat_button("Edit", "btn-edit", classes="tinted")
             yield flat_button("Delete", "btn-delete", classes="tinted -red")
         with VerticalScroll(id="note-detail-scroll"):
@@ -100,15 +118,23 @@ class NoteDetail(Vertical):
         self.query_one(VerticalScroll).scroll_home(animate=False)
 
     def show_header(self, note: Entry) -> None:
-        """The box, the star and the date for the note as it is now; the content stays as it was."""
+        """The id, the date, the icons, the box and the star for the note as it is now; the content
+        stays as it was."""
         self.note = note
         for box in self.query(DoneBox):
             box.show(note)
         self.query_one(PinStar).show(note)
-        slack = isinstance(note, WatchItem)
-        self.query_one("#note-detail-id", Static).update(note.source_name if slack else f"#{note.id}")
-        when = "Happened" if slack else "Updated"
-        self.query_one("#note-detail-date", Static).update(f"{when} {long_date(note.updated_at)}")
+        self.query_one("#note-detail-id", Static).update(f"#{note.id}")
+        item = isinstance(note, WatchItem)
+        self.query_one("#note-detail-date", Static).update(f"Created {long_date(note.created_at)}" if item else date_line(note))
+        icons = Text()
+        if item:
+            # Where it comes from, or failing CI's build and PR, each a link, as in the list
+            palette = self.app.palette
+            for kind, url in note.links:
+                icons.append(" " if icons else "")
+                icons.append(LINK_ICONS[kind], style=Style(color=palette["red"] if kind == "jenkins" else palette["blue"], link=url))
+        self.query_one(LinkIcons).update(icons)
 
     def focus_content(self) -> None:
         self.query_one(VerticalScroll).focus()
@@ -120,9 +146,8 @@ class NoteDetail(Vertical):
         if self.note is not None:
             markdown.update(self.note.content)
 
-    @on(Button.Pressed, "#btn-close-note")
-    def _close_pressed(self, event: Button.Pressed) -> None:
-        event.stop()
+    @on(events.Click, "#breadcrumb-list")
+    def _crumb_clicked(self) -> None:
         self.action_close()
 
     @on(Button.Pressed, "#btn-edit")
@@ -162,4 +187,5 @@ class TodoDetail(NoteDetail):
     """One todo: a note with its check box before the star."""
 
     KIND = TODO
+    CRUMB = "Todos"
     BINDINGS = detail_bindings(TODO)

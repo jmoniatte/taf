@@ -15,6 +15,7 @@ from taf.app import TafApp
 from taf.config import Config
 from taf.database import open_database
 from taf.notes import NOTE, TODO, create_note, list_notes, long_date, set_done, set_pinned
+from taf.watch.view import get_item as get_watch_item
 from taf.watch.items import Item, get_item, now, record_run, save_item
 from taf.watch.projects import add_project
 from taf.widgets import WatchTab, WatchDetail, NoteDetail, NotesTab, NotesTable, TodoDetail, TodosTab
@@ -33,6 +34,12 @@ def writes(content: str) -> str:
 def suspend(_app):
     # The headless test driver cannot suspend, and these editors do not need the terminal
     yield
+
+
+def header(detail) -> str:
+    """The detail view's header line as text: its Statics, each stripped, the empty ones left out."""
+    parts = [str(widget.render()).strip() for widget in detail.query("#note-detail-header Static")]
+    return " ".join(part for part in parts if part)
 
 
 class AppCase(unittest.TestCase):
@@ -85,9 +92,9 @@ class WatchTabTest(AppCase):
             await pilot.pause()
             table = tab.query_one(NotesTable)
             lines = ["".join(str(cell) for cell in table.get_row_at(row)).rstrip() for row in range(table.row_count)]
-            # A heading per project from the left edge, a blank row between them; no id for an item
+            # A heading per project from the left edge, a blank row between them; each item with its id
             self.assertEqual(lines, [
-                " follow (1)", "    \U000f0131  ☆  Answer Kevin  \U000f04b1", "", " No project (1)", "    \U000f0131  ☆  CI fails on r#1  \uf2ec  \U000f02a4",
+                " follow (1)", " 1  \U000f0131  ☆  Answer Kevin  \U000f04b1", "", " No project (1)", " 2  \U000f0131  ☆  CI fails on r#1  \uf2ec  \U000f02a4",
             ])
             self.assertEqual(str(tab.query_one("#notes-status", Static).render()), "2 open items")
             # The cursor starts on an item, never a heading; j skips the blank row and the heading
@@ -116,7 +123,12 @@ class WatchTabTest(AppCase):
             await pilot.pause()
             detail = tab.query_one(WatchDetail)
             self.assertTrue(detail.display)
-            self.assertEqual(str(detail.query_one("#note-detail-id", Static).render()), "Slack")
+            self.assertEqual(str(detail.query_one("#note-detail-id", Static).render()), "#1")
+            # One line: "Watch >", a link back, the id, when it was saved, Slack's icon, then the box and the star
+            created = long_date(get_watch_item(self.db, 1).created_at)
+            self.assertEqual(header(detail), f"Watch > #1 Created {created} \U000f04b1 \U000f0132 ★")
+            links = [span.style.link for span in detail.query_one("#note-detail-links", Static).render().spans]
+            self.assertEqual(links, ["https://slack/1"])
             self.assertFalse(detail.query_one("#btn-edit").display or detail.query_one("#btn-delete").display)
             await pilot.click("#watch-view #note-detail-done")
             await pilot.pause()
@@ -438,35 +450,34 @@ class TodosViewTest(AppCase):
             detail = app.query_one(TodoDetail)
             await pilot.press("enter")
             await pilot.pause()
-            # Close, then the blue Edit, on the date's line
-            close_button = detail.query_one("#btn-close-note")
+            # The blue Edit on the date's line; no Close: the breadcrumbs and Escape go back
+            self.assertFalse(detail.query("#btn-close-note"))
             edit_button = detail.query_one("#btn-edit")
             date_line = detail.query_one("#note-detail-date")
-            self.assertTrue(close_button.display and edit_button.display)
-            self.assertEqual({close_button.region.y, edit_button.region.y}, {date_line.region.y})
-            self.assertLess(date_line.region.x, close_button.region.x)
-            self.assertLess(close_button.region.right, edit_button.region.x)
+            self.assertTrue(edit_button.display)
+            self.assertEqual(edit_button.region.y, date_line.region.y)
+            self.assertLess(date_line.region.x, edit_button.region.x)
             self.assertTrue(edit_button.has_class("tinted"))
             todo = list_notes(self.db, TODO, status="open")[0]
             self.assertTrue(detail.display)
             self.assertFalse(app.query_one("#todos-view").query_one("#notes-list").display)
             self.assertTrue(edit_button.display)
-            # The star, outlined, then when it was last updated
+            # The star, outlined, then when it was written: never changed since, so Created
             star = app.query_one("#todos-view").query_one("#note-detail-pin", Static)
             date = app.query_one("#todos-view").query_one("#note-detail-date", Static)
             self.assertEqual(str(star.render()).strip(), "☆")
-            self.assertEqual(str(date.render()), f"Updated {long_date(todo.updated_at)}")
-            # A click on the star pins, there and in the list, and leaves "Updated" as it was
+            self.assertEqual(str(date.render()), f"Created {long_date(todo.created_at)}")
+            # A click on the star pins, there and in the list, and leaves the date as it was
             await pilot.click(star)
             await pilot.pause()
             self.assertEqual((str(star.render()).strip(), star.has_class("-pinned")), ("★", True))
             self.assertTrue(list_notes(self.db, TODO, status="open")[0].pinned)
             self.assertEqual(self.rows(app)[0][1], "\U000f0131  ★")
-            self.assertEqual(str(date.render()), f"Updated {long_date(todo.updated_at)}")
+            self.assertEqual(str(date.render()), f"Created {long_date(todo.created_at)}")
             await pilot.click(star)
             await pilot.pause()
             self.assertEqual((str(star.render()).strip(), list_notes(self.db, TODO, status="open")[0].pinned), ("☆", False))
-            # The box marks done and back, there and in the list, the date still "Updated"
+            # The box marks done and back, there and in the list, the date still "Created"
             box = app.query_one("#todos-view").query_one("#note-detail-done", Static)
             self.assertEqual(str(box.render()).strip(), "\U000f0131")
             await pilot.click(box)
@@ -474,7 +485,7 @@ class TodosViewTest(AppCase):
             self.assertEqual(str(box.render()).strip(), "\U000f0132")
             self.assertTrue(list_notes(self.db, TODO, status="done"))
             self.assertEqual(self.rows(app)[0][1], "\U000f0132  ☆")
-            self.assertEqual(str(date.render()), f"Updated {long_date(todo.updated_at)}")
+            self.assertEqual(str(date.render()), f"Created {long_date(todo.created_at)}")
             await pilot.click(box)
             await pilot.pause()
             self.assertEqual(str(box.render()).strip(), "\U000f0131")
@@ -501,12 +512,15 @@ class TodosViewTest(AppCase):
             await pilot.pause()
             self.assertTrue(detail.display)
 
-            # Close goes back to the list, as does Escape
-            await pilot.click(close_button)
+            # The header, as in maison: "Todos >" a link back to the list, then the id and when it changed
+            self.assertEqual(header(detail).split(" Updated ")[0], f"Todos > #{todo.id}")
+            await pilot.click("#todos-view #breadcrumb-list")
             await pilot.pause()
             self.assertFalse(detail.display)
             await pilot.press("enter")
             await pilot.pause()
+
+            # Escape goes back to the list too
             self.assertTrue(detail.display)
             await pilot.press("escape")
             await pilot.pause()
@@ -610,6 +624,9 @@ class NotesViewTest(AppCase):
             self.assertFalse(detail.query("#note-detail-done"))
             self.assertEqual(str(detail.query_one("#note-detail-pin", Static).render()).strip(), "☆")
             self.assertEqual(str(detail.query_one("#note-detail-id", Static).render()), "#4")
+            # The same header as a todo's, without the box, and no Close: "Notes >" goes back
+            self.assertTrue(header(detail).startswith("Notes > #4 Created "))
+            self.assertFalse(detail.query("#btn-close-note") or detail.query("#note-detail-done"))
             # Delete, on the date's line, as for a todo
             await pilot.click(detail.query_one("#btn-delete"))
             await pilot.pause()

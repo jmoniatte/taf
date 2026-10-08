@@ -170,15 +170,21 @@ says when the content last changed.
 
 `TodosTab` (`widgets/notes_tab.py`) is what the tab holds: the list (`TodosView`) or, in its
 place, one todo (`TodoDetail`), as yafyaf-tui's `MainArea` switches between its list and
-`YafDetail`; `NotesTab.viewing` is the todo on show, or None. The view shows a line first: the id,
-"#12", then the check box and the star as in the list, which a click toggles (in the list's row too), then, in green,
-"Updated Monday, July 1, 2026" (`notes.long_date`, yafyaf-tui's format), when the content last
-changed; then its content as markdown (`NoteMarkdown`, a
+`YafDetail`; `NotesTab.viewing` is the todo on show, or None. The views of a todo, a note and a
+watch item share one layout (`NoteDetail`): a header line, then the content as markdown. The header
+starts with breadcrumbs, as maison's todo page does: "Todos >" (`NoteDetail.CRUMB`; "Notes >",
+"Watch >"), in blue, a link back to the list; then the id, "#12"; then, in green, "Created Today at
+3:09pm" while the content never changed, else "Updated Yesterday at 3:09pm" (`notes.date_line`,
+`notes.long_date`: Today, Yesterday, or "October 5, 2026", always with the time; a watch item's is
+"Created ..." with when it was saved); then a watch item's icons, links as in its row
+(`LinkIcons`). On the right: the check box (not for a note) and the star as in the list, which a
+click toggles (in the list's row too), then Edit and Delete (not for a watch item). After the
+header, the content (`NoteMarkdown`, a
 copy of yafyaf-tui's `YafMarkdown`: links the terminal can open, tags that filter the list, code
 blocks; its styles map Textual's markdown onto the palette). Escape or `q` goes back to the list,
-`e` or Shift+Enter edits, `y` copies the selection or the todo, `j` and `k` scroll. At the right
-end of the date's line are Close, back to the list like Escape, then a blue Edit and a red Delete
-(which asks first, Cancel focused). While the list is on show, the footer has a green Refresh after
+`e` or Shift+Enter edits, `y` copies the selection or the todo, `j` and `k` scroll. Edit is blue and
+Delete red (it asks first, Cancel focused). There is no Close: it read like a status; the
+breadcrumbs' first step and Escape go back. While the list is on show, the footer has a green Refresh after
 Exit, which reloads it like `r` (the tab's `reload`), for todos written by `taf todo` meanwhile;
 it shows on Watch's list and on Logs too, not on Stats (`TafApp.refresh_footer`, also run when the tab changes).
 
@@ -228,8 +234,9 @@ then the latest first (`watch.view.grouped`). It reuses `NotesTable` and `NoteDe
 when it happened), so the table and the view show it like one. The table has no cell padding of its
 own: each cell carries its spaces, so a heading starts at the row's left edge, cut where the columns
 meet (`NotesTable._heading`), and a blank row (`Spacer`) comes before each heading but the first.
-The cursor skips headings and blank rows. A row has no id (an item's id is another count than the
-todos'), and ends with Nerd Font icons that a click opens (`WatchItem.links`, `LINK_ICONS`): where
+The cursor skips headings and blank rows. A row starts with the item's id, as a todo's does (another
+count than the todos': `taf watch show 12`, not `taf todo show 12`; the full view says "#12 Slack"),
+and ends with Nerd Font icons that a click opens (`WatchItem.links`, `LINK_ICONS`): where
 it comes from in blue (Slack, GitHub, or a 7 in a circle, the user's sign, for one added by hand or
 by an agent); failing CI has two, its build (Jenkins, in red) then its PR (GitHub). There is no key to
 open a link. The full view writes each address out after its name (`LINK_NAMES`: "GitHub PR:
@@ -265,14 +272,18 @@ shown the active projects and may add some (`projects`, names checked by `projec
 channels to them; a channel links to one project only. `MCP_CONNECTION_NONBLOCKING=false` is
 required: without it the headless run starts before the connector is up and has no Slack tools.
 
-How a GitHub sync works: `github.sync` runs `gh` only, no Claude run. Each run it rebuilds the
-GitHub items from scratch and saves them by key: `replies:<pr url>` (others' comments and reviews
+How a GitHub sync works: `github.sync` runs `gh` only, no Claude run, and makes one GraphQL request
+(`github.QUERY`, `query`, `ask`): the user's login, their open PRs with comments, reviews and the
+checks on the last commit, and one search per kind of review request (`requests`: theirs, then each
+team's). Each run it works out from that which GitHub items should exist, by key: `replies:<pr url>` (others' comments and reviews
 since the user's last comment or review on their PR; `ignore_users` and `[bot]` accounts skipped;
 fyi when all are approvals), `ci:<pr url>` (failing checks on the last commit, the latest run of
 each check, CANCELLED ignored) and `review:<pr url>` (`user-review-requested:@me`, plus each of
 `review_teams` not yet approved or reviewed by the user; drafts and the user's own PRs left out). An
-open GitHub item missing from the run is closed as done; a closed one comes back open when its
-`happened_at` changes. A `gh` error stops the sync before anything changes.
+open GitHub item missing from the run is closed as done. An item is saved only when it is new or its
+`happened_at` (its latest event) changed (`github.track`): then a done one comes back open; an item
+with nothing new is left as it is, so the text is not rewritten every run. A `gh` or GraphQL error stops the
+sync before anything changes.
 
 Projects: a project is a piece of work (`follow-privacy-levels`), never a repo, with a number id
 (a rename changes one row). `github.sync` gives every open PR of the user a project: its branch's

@@ -182,7 +182,7 @@ class NotesTable(DataTable):
             if isinstance(note, Group) and self.notes:
                 self.notes.append(Spacer(note))
             self.notes.append(note)
-        self._id_digits = max((len(str(note.id)) for note in notes if isinstance(note, Note)), default=1)
+        self._id_digits = max((len(str(note.id)) for note in notes if not isinstance(note, Group)), default=1)
         self.columns["id"].width = self._id_digits + 2
         for note in self.notes:
             # Text, not str: the table reads strings as markup, which eats brackets in a summary
@@ -197,8 +197,7 @@ class NotesTable(DataTable):
             return Text(), Text(), Text()
         if isinstance(note, Group):
             return self._heading(note)
-        shown_id = str(note.id) if isinstance(note, Note) else ""
-        return Text(f" {shown_id:>{self._id_digits}} "), self._lead(note), self._summary(note)
+        return Text(f" {note.id:>{self._id_digits}} "), self._lead(note), self._summary(note)
 
     def _heading(self, group: Group) -> tuple[Text, Text, Text]:
         """The project's name and count from the row's left edge, then its note, a link, cut where the

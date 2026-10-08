@@ -1,4 +1,5 @@
-"""GitHub through `gh`: the user's open PRs name projects, and give items for replies, failing CI and review requests."""
+"""GitHub through `gh`, in one GraphQL request: the user's open PRs name projects, and give items for
+replies, failing CI and review requests."""
 
 import json
 import sqlite3
@@ -12,12 +13,30 @@ from .items import Item, list_items, now, save_item, set_done
 from .projects import add_project, get_project, link, linked_project, name_from_branch
 
 SOURCE = "github"
-ME = ["gh", "api", "user"]
-SEARCH = ["gh", "search", "prs", "--author", "@me", "--state", "open", "--limit", "100",
-          "--json", "number,title,url,repository"]
-REQUESTS = ["gh", "search", "prs", "--state", "open", "--limit", "100",
-            "--json", "number,title,url,repository,author,createdAt", "--"]
-VIEW_FIELDS = "headRefName,comments,reviews,statusCheckRollup"
+# One GraphQL request a sync: the user's login and open PRs with their comments, reviews and the checks
+# on their last commit, then one search per kind of review request (SEARCHES, filled in by query())
+QUERY = """
+query {
+  viewer {
+    login
+    pullRequests(states: OPEN, first: 100) {
+      nodes {
+        url number title headRefName repository { name }
+        comments(last: 100) { nodes { author { login } createdAt } }
+        reviews(last: 100) { nodes { author { login } state submittedAt } }
+        commits(last: 1) { nodes { commit { statusCheckRollup { contexts(first: 100) { nodes {
+          ... on CheckRun { name conclusion startedAt completedAt detailsUrl }
+          ... on StatusContext { context state createdAt targetUrl }
+        } } } } } }
+      }
+    }
+  }
+SEARCHES}
+"""
+REQUEST = """  %s: search(type: ISSUE, first: 100, query: "%s") {
+    nodes { ... on PullRequest { url number title repository { name } author { login } createdAt } }
+  }
+"""
 REVIEW_STATES = {"APPROVED": "approved", "CHANGES_REQUESTED": "requested changes", "COMMENTED": "commented"}
 # CANCELLED is left out: a cancelled run is almost always replaced by a newer one
 FAILED = {"FAILURE", "ERROR", "TIMED_OUT", "STARTUP_FAILURE", "ACTION_REQUIRED"}
@@ -41,16 +60,44 @@ def gh(args: list[str]) -> list | dict:
     return json.loads(done.stdout)
 
 
+def requests(teams: list[str]) -> list[tuple[str, str, str]]:
+    """(alias, who it was asked of, search) for each kind of review request: the user, then each team.
+    A team request stays after a teammate reviews, so PRs already approved or reviewed by the user
+    are left out of the teams'."""
+    rest = "is:pr is:open -author:@me draft:false"
+    found = [("you", "you", f"user-review-requested:@me {rest}")]
+    found += [(f"team{i}", f"team {team.split('/')[-1]}", f"team-review-requested:{team} -reviewed-by:@me -review:approved {rest}")
+              for i, team in enumerate(teams)]
+    return found
+
+
+def query(teams: list[str]) -> str:
+    return QUERY.replace("SEARCHES", "".join(REQUEST % (alias, terms) for alias, _, terms in requests(teams)))
+
+
+def ask(run, teams: list[str]) -> dict:
+    """GitHub's answer to the one request; a GraphQL error raises, as gh's own do."""
+    answer = run(["gh", "api", "graphql", "-f", f"query={query(teams)}"])
+    if answer.get("errors"):
+        raise RuntimeError(f"gh api graphql: {answer['errors'][0].get('message', answer['errors'][0])}")
+    return answer["data"]
+
+
+def nodes(connection: dict | None) -> list:
+    return [node for node in ((connection or {}).get("nodes") or []) if node]
+
+
 def sync(db: sqlite3.Connection, config: GithubConfig = GithubConfig(), run=gh) -> SyncReport:
     """Record the user's open PRs, give each a project (its branch's, else one named after the branch),
     save items for what needs the user on GitHub, close the ones that no longer do, and archive
     projects whose PRs are all closed and that have nothing open."""
     report = SyncReport()
     try:
-        me = run(ME)["login"]
-        found = run(SEARCH)
-        views = {pr["url"]: run(["gh", "pr", "view", pr["url"], "--json", VIEW_FIELDS]) for pr in found}
-        requested = review_requests(run, config.review_teams)
+        data = ask(run, config.review_teams)
+        me = data["viewer"]["login"]
+        found = nodes(data["viewer"]["pullRequests"])
+        views = {pr["url"]: pr_view(pr) for pr in found}
+        requested = review_requests(data, config.review_teams)
     except (RuntimeError, OSError, subprocess.TimeoutExpired, json.JSONDecodeError, KeyError, TypeError) as error:
         report.error = f"github: {error}"
         return report
@@ -108,14 +155,30 @@ def sync(db: sqlite3.Connection, config: GithubConfig = GithubConfig(), run=gh) 
     return report
 
 
+def pr_view(pr: dict) -> dict:
+    """A PR's comments, reviews, checks and branch, as reply_item and ci_item read them."""
+    commits = nodes(pr.get("commits"))
+    rollup = ((commits[0].get("commit") or {}).get("statusCheckRollup") or {}) if commits else {}
+    return {
+        "headRefName": pr["headRefName"],
+        "comments": nodes(pr.get("comments")),
+        "reviews": nodes(pr.get("reviews")),
+        "statusCheckRollup": nodes(rollup.get("contexts")),
+    }
+
+
 def track(db: sqlite3.Connection, item: Item) -> bool:
-    """Save the item, reopening a closed one when something newer happened; True when it is new or reopened."""
+    """Save the item only when it is new or something happened since it was saved (its latest event
+    changed), reopening it then if it was done; an item with nothing new is left as it is. True when
+    it is new or reopened."""
     row = db.execute("SELECT done_at, happened_at FROM watch_items WHERE source = ? AND key = ?",
                      (SOURCE, item.key)).fetchone()
+    if row is not None and item.happened_at == row["happened_at"]:
+        return False
     save_item(db, item)
     if row is None:
         return True
-    if row["done_at"] is not None and item.happened_at != row["happened_at"]:
+    if row["done_at"] is not None:
         db.execute("UPDATE watch_items SET done_at = NULL WHERE source = ? AND key = ?", (SOURCE, item.key))
         return True
     return False
@@ -135,15 +198,11 @@ def ready_to_deploy(config: GithubConfig, run=gh) -> tuple[int, str] | None:
     return len(found), f"https://github.com/{config.deploy_repo}/pulls?q={query}"
 
 
-def review_requests(run, teams: list[str]) -> list[Item]:
+def review_requests(data: dict, teams: list[str]) -> list[Item]:
     """PRs waiting on the user's review, asked of them or of one of their teams."""
-    searches = [("you", ["user-review-requested:@me"])]
-    # A team request stays after a teammate reviews, so skip PRs already approved or reviewed by the user
-    searches += [(f"team {team.split('/')[-1]}", [f"team-review-requested:{team}", "-reviewed-by:@me", "-review:approved"])
-                 for team in teams]
     found: dict[str, Item] = {}
-    for who, terms in searches:
-        for pr in run([*REQUESTS, *terms, "-author:@me", "draft:false"]):
+    for alias, who, _ in requests(teams):
+        for pr in nodes(data.get(alias)):
             if pr["url"] in found:
                 continue
             author = pr["author"]["login"]
@@ -190,7 +249,7 @@ def ci_item(pr: dict, view: dict, project: str | None) -> Item | None:
     for check in view.get("statusCheckRollup") or []:
         name = check.get("context") or check.get("name") or "?"
         state = check.get("state") or check.get("conclusion") or ""
-        when = check.get("startedAt") or check.get("completedAt") or ""
+        when = check.get("startedAt") or check.get("completedAt") or check.get("createdAt") or ""
         # A check run again shows up once per run
         if name not in latest or when >= latest[name][0]:
             latest[name] = (when, state, check.get("targetUrl") or check.get("detailsUrl") or "")

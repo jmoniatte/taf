@@ -61,14 +61,42 @@ the theme and `q` quits.
 
 A timer runs `taf watch collect`. It first reads GitHub with `gh` (no cost): your open pull
 requests, what others said on them since you last replied, their failing checks, and the pull
-requests waiting on your review or on one of your teams'. Then a headless Claude run (Sonnet by
-default) reads new Slack messages through the claude.ai Slack connector, with read-only tools, and
-keeps only the conversations that matter to you. Raw messages are never stored. GitHub items close
+requests waiting on your review or on one of your teams'. Then a headless Claude run (Sonnet unless
+the config says otherwise) reads new Slack messages through the claude.ai Slack connector, with
+read-only tools, and keeps only the conversations that matter to you. Raw messages are never stored. GitHub items close
 by themselves once the PR is merged, CI passes, you reply, or the review is done.
 
-It needs `gh` logged in, and Claude Code logged into a claude.ai account with the Slack connector
-connected. Settings go in the `watch:` section of the config (`config.example.yml`). A systemd user
-timer, every 5 minutes from 8:00 to 22:00 on weekdays:
+### Setting it up
+
+taf never holds a token of its own: it borrows the GitHub CLI's login, and Claude Code's.
+
+1. **GitHub**, through the GitHub CLI. Install `gh`, then run `gh auth login` (GitHub.com, a browser
+   login). The token needs the `repo` scope, to read private repos' pull requests and checks, and
+   `read:org`, for review requests made to your teams; `gh auth login` gives both. Check with
+   `gh auth status`, then `taf watch collect github`, which is free and prints your open PRs.
+2. **Slack**, through Claude Code and claude.ai. Install Claude Code (`claude`), run it once and log
+   in with `/login` using your claude.ai account (the connectors belong to the account; an API key
+   alone has none). On claude.ai, under Settings, Connectors, connect **Slack** and allow it on your
+   workspace. Claude Code finds the account's connectors on its own: `claude mcp list` should show
+   `claude.ai Slack: https://mcp.slack.com/mcp - ✔ Connected`. The collector's Claude runs only
+   get Slack's read tools (`taf/watch/slack.py`), so they can never post.
+3. **Settings**: the `watch:` section of `~/.config/taf/config.yml` (`config.example.yml` shows it):
+   the model (`haiku` is cheap and enough), the channels to skip, your review teams, the accounts to
+   ignore, and the repo whose ready-to-deploy PRs to count.
+4. **Try it**: `taf watch collect` reads GitHub, then Slack. The first Slack run reads the last 24
+   hours (`first_run_hours`); later runs go on from where the last one stopped. `taf watch runs`
+   shows each run, its cost and any error.
+5. **The timer**: copy the two files below to `~/.config/systemd/user/`, then run
+   `systemctl --user daemon-reload` and `systemctl --user enable --now taf-watch.timer`.
+   `systemctl --user list-timers` shows the next run. After a change to the timer, run
+   `systemctl --user daemon-reload` and `systemctl --user restart taf-watch.timer`.
+   The service finds `taf`, `gh` and `claude` through its `PATH` line: add their folder there if
+   they are installed elsewhere than `~/.local/bin`, `/usr/local/bin` or `/usr/bin`.
+
+Run the timer on one machine only. With the database in a synced folder (Dropbox), two timers
+would read Slack twice, pay twice, and write to the same file at once.
+
+A systemd user timer, every 5 minutes from 8:00 to 22:00 on weekdays:
 
 ```ini
 # ~/.config/systemd/user/taf-watch.service

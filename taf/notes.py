@@ -61,9 +61,20 @@ def front_matter(note: Note) -> dict[str, str]:
     return fields
 
 
-def long_date(moment: datetime) -> str:
-    """Monday, July 1, 2026, as yafyaf-tui shows a yaf's date."""
-    return f"{moment:%A}, {moment:%B} {moment.day}, {moment.year}"
+def long_date(moment: datetime, now: datetime | None = None) -> str:
+    """Today at 3:09pm, Yesterday at 3:09pm, or October 5, 2026 at 3:09pm."""
+    now = now or datetime.now()
+    time = f"{moment:%I:%M}".lstrip("0") + ("am" if moment.hour < 12 else "pm")
+    days = (now.date() - moment.date()).days
+    day = "Today" if days == 0 else "Yesterday" if days == 1 else f"{moment:%B} {moment.day}, {moment.year}"
+    return f"{day} at {time}"
+
+
+def date_line(note: Note) -> str:
+    """When the note was written, or last changed if it was since: "Created Today at 3:09pm"."""
+    if note.updated_at == note.created_at:
+        return f"Created {long_date(note.created_at)}"
+    return f"Updated {long_date(note.updated_at)}"
 
 
 def find_tags(text: str) -> list[tuple[int, int, str]]:

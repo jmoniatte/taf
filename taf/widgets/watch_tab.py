@@ -218,6 +218,7 @@ class WatchDetail(NoteDetail):
     edited or deleted."""
 
     KIND = TODO
+    CRUMB = "Watch"
     BINDINGS = [
         Binding("escape", "close", "Back to the list", group=ACTIONS),
         Binding("q", "close", "Back to the list", show=False),
