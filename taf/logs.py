@@ -1,11 +1,19 @@
-"""Reading the logs from the database; no Textual."""
+"""Reading and writing the logs, and their text for the editor; no Textual."""
 
+import re
 import sqlite3
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from itertools import groupby
 
 from .message import Inference, parse_message
+
+DAY_HEADER = re.compile(r"^# (\d{4}-\d{2}-\d{2})")
+# The message may be empty, as some old logs are, and an editor may trim the space before it
+ENTRY = re.compile(r"^\* (\d{2}:\d{2}) -(?: (.*))?$")
+# What an entry may look like once mistyped or reformatted: "- 9:00 - x", "  * 10:00 - x"
+ENTRY_LIKE = re.compile(r"^\s*[-*+]\s*\d{1,2}:\d{2}")
 
 
 @dataclass(frozen=True, slots=True)
@@ -103,3 +111,53 @@ def format_duration(minutes: int | None) -> str:
     if not hours:
         return f"{rest}m"
     return f"{hours}h{rest:02d}" if rest else f"{hours}h"
+
+
+def meta_text(action: str, context: str) -> str:
+    """[+action @context] as a log line ends with it, without what is missing; "" with neither."""
+    meta = " ".join(part for part in (action and f"+{action}", context and f"@{context}") if part)
+    return f"[{meta}]" if meta else ""
+
+
+def render_markdown(logs: list[Log], empty_days: Iterable[date] = ()) -> str:
+    """The logs by day for the editor, each as it was typed, the last day first; empty_days get a
+    header too, so logs can be written under it:
+
+    # 2026-09-30 - Wednesday
+    * 09:00 - Reviewed PR @15m
+    """
+    logs_by_day = dict(by_day(logs))
+    days = []
+    for day in sorted({*logs_by_day, *empty_days}, reverse=True):
+        day_logs = logs_by_day.get(day, [])
+        lines = [f"# {day} - {day:%A}", *(f"* {log.logged_at:%H:%M} - {log.message}" for log in day_logs), ""]
+        days.append("\n".join(lines))
+    return "\n".join(days)
+
+
+def parse_markdown(content: str) -> tuple[list[date], list[tuple[datetime, str]]]:
+    """The days whose header is in the file, and every entry under one, as (when, message).
+
+    Other lines are ignored; ValueError for a date or time that does not exist, and for a line
+    under a day that starts like an entry but is not one, since its day would lose it.
+    """
+    days: list[date] = []
+    entries: list[tuple[datetime, str]] = []
+    day = None
+    for line in content.splitlines():
+        if header := DAY_HEADER.match(line):
+            day = _parse(header.group(1), "%Y-%m-%d", f"'{line}' has no valid date").date()
+            days.append(day)
+        elif day is not None and (entry := ENTRY.match(line)):
+            time = _parse(entry.group(1), "%H:%M", f"'{line}' has no valid time").time()
+            entries.append((datetime.combine(day, time), entry.group(2) or ""))
+        elif day is not None and (line.startswith("* ") or ENTRY_LIKE.match(line)):
+            raise ValueError(f"'{line}' is not a log, '* HH:MM - message'")
+    return days, entries
+
+
+def _parse(value: str, format: str, error: str) -> datetime:
+    try:
+        return datetime.strptime(value, format)
+    except ValueError:
+        raise ValueError(error) from None

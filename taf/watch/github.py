@@ -5,16 +5,15 @@ import json
 import sqlite3
 import subprocess
 import urllib.parse
+import time
 from dataclasses import dataclass, field
-from datetime import datetime
 
 from .config import GithubConfig
-from .items import Item, list_items, now, save_item, set_done
+from .items import FYI, Item, list_items, local_iso, now, project_id, record_run, save_item, set_done
 from .projects import add_project, get_project, link, linked_project, name_from_branch
 
 SOURCE = "github"
-# One GraphQL request a sync: the user's login and open PRs with their comments, reviews and the checks
-# on their last commit, then one search per kind of review request (SEARCHES, filled in by query())
+# SEARCHES becomes one search per kind of review request (query())
 QUERY = """
 query {
   viewer {
@@ -51,6 +50,7 @@ class SyncReport:
     found: list[str] = field(default_factory=list)
     closed: list[str] = field(default_factory=list)
     error: str | None = None
+    seconds: float = 0.0
 
 
 def gh(args: list[str]) -> list | dict:
@@ -90,17 +90,26 @@ def nodes(connection: dict | None) -> list:
 def sync(db: sqlite3.Connection, config: GithubConfig = GithubConfig(), run=gh) -> SyncReport:
     """Record the user's open PRs, give each a project (its branch's, else one named after the branch),
     save items for what needs the user on GitHub, close the ones that no longer do, and archive
-    projects whose PRs are all closed and that have nothing open."""
-    report = SyncReport()
+    projects whose PRs are all closed and that have nothing open. The run is recorded."""
+    started, started_at = time.time(), now()
     try:
         data = ask(run, config.review_teams)
-        me = data["viewer"]["login"]
-        found = nodes(data["viewer"]["pullRequests"])
-        views = {pr["url"]: pr_view(pr) for pr in found}
-        requested = review_requests(data, config.review_teams)
     except (RuntimeError, OSError, subprocess.TimeoutExpired, json.JSONDecodeError, KeyError, TypeError) as error:
-        report.error = f"github: {error}"
-        return report
+        # Before anything changed
+        report = SyncReport(error=f"github: {error}")
+    else:
+        report = record(db, data, config)
+    report.seconds = time.time() - started
+    record_run(db, SOURCE, started_at, None, None, len(report.found), report.error)
+    return report
+
+
+def record(db: sqlite3.Connection, data: dict, config: GithubConfig) -> SyncReport:
+    """Save GitHub's answer: the PRs and their projects, then the items."""
+    report = SyncReport()
+    me = data["viewer"]["login"]
+    found = nodes(data["viewer"]["pullRequests"])
+    requested = review_requests(data, config.review_teams)
     known = {r["url"] for r in db.execute("SELECT url FROM watch_prs")}
     for pr in found:
         url = pr["url"]
@@ -111,7 +120,7 @@ def sync(db: sqlite3.Connection, config: GithubConfig = GithubConfig(), run=gh) 
             db.execute(
                 "INSERT INTO watch_prs (url, repo, number, title, branch, state, updated_at) "
                 "VALUES (?, ?, ?, ?, ?, 'open', ?)",
-                (url, pr["repository"]["name"], pr["number"], pr["title"], views[url]["headRefName"], now()),
+                (url, pr["repository"]["name"], pr["number"], pr["title"], pr["headRefName"], now()),
             )
     open_urls = {pr["url"] for pr in found}
     report.open_prs = len(open_urls)
@@ -129,8 +138,7 @@ def sync(db: sqlite3.Connection, config: GithubConfig = GithubConfig(), run=gh) 
                 add_project(db, project, pr["title"])
                 report.new_projects += 1
             link(db, project, "branch", pr["branch"])
-        db.execute("UPDATE watch_prs SET project_id = (SELECT id FROM watch_projects WHERE name = ?) WHERE url = ?",
-                   (project, pr["url"]))
+        db.execute("UPDATE watch_prs SET project_id = ? WHERE url = ?", (project_id(db, project), pr["url"]))
         # A new PR on an archived project's branch means the work started again
         db.execute("UPDATE watch_projects SET status = 'active', updated_at = ? WHERE name = ? AND status = 'archived'",
                    (now(), project))
@@ -141,8 +149,7 @@ def sync(db: sqlite3.Connection, config: GithubConfig = GithubConfig(), run=gh) 
             "SELECT p.name FROM watch_prs pr LEFT JOIN watch_projects p ON p.id = pr.project_id WHERE pr.url = ?",
             (pr["url"],),
         ).fetchone()["name"]
-        view = views[pr["url"]]
-        items += [i for i in (reply_item(pr, view, me, config.ignore_users, project), ci_item(pr, view, project)) if i]
+        items += [i for i in (reply_item(pr, me, config.ignore_users, project), ci_item(pr, project)) if i]
     for item in items:
         if track(db, item):
             report.found.append(item.summary)
@@ -155,16 +162,6 @@ def sync(db: sqlite3.Connection, config: GithubConfig = GithubConfig(), run=gh) 
     return report
 
 
-def pr_view(pr: dict) -> dict:
-    """A PR's comments, reviews, checks and branch, as reply_item and ci_item read them."""
-    commits = nodes(pr.get("commits"))
-    rollup = ((commits[0].get("commit") or {}).get("statusCheckRollup") or {}) if commits else {}
-    return {
-        "headRefName": pr["headRefName"],
-        "comments": nodes(pr.get("comments")),
-        "reviews": nodes(pr.get("reviews")),
-        "statusCheckRollup": nodes(rollup.get("contexts")),
-    }
 
 
 def track(db: sqlite3.Connection, item: Item) -> bool:
@@ -210,22 +207,22 @@ def review_requests(data: dict, teams: list[str]) -> list[Item]:
                 source=SOURCE, key=f"review:{pr['url']}", kind="action",
                 summary=f"Review {pr['repository']['name']}#{pr['number']} {pr['title']}",
                 details=f"Review requested from {who}; opened by {author}.", people=author,
-                url=pr["url"], happened_at=local(pr["createdAt"]),
+                url=pr["url"], happened_at=local_iso(pr["createdAt"]),
             )
     return list(found.values())
 
 
-def reply_item(pr: dict, view: dict, me: str, ignore: list[str], project: str | None) -> Item | None:
+def reply_item(pr: dict, me: str, ignore: list[str], project: str | None) -> Item | None:
     """What others said or decided on the user's PR since the user last commented or reviewed it."""
     def login(entry):
         return (entry.get("author") or {}).get("login") or ""
 
-    mine = [c["createdAt"] for c in view["comments"] if login(c) == me]
-    mine += [r["submittedAt"] for r in view["reviews"] if login(r) == me]
+    comments, reviews = nodes(pr.get("comments")), nodes(pr.get("reviews"))
+    mine = [c["createdAt"] for c in comments if login(c) == me]
+    mine += [r["submittedAt"] for r in reviews if login(r) == me]
     since = max(mine, default="")
-    events = [(c["createdAt"], login(c), "commented") for c in view["comments"]]
-    events += [(r["submittedAt"], login(r), REVIEW_STATES[r["state"]]) for r in view["reviews"]
-               if r["state"] in REVIEW_STATES]
+    events = [(c["createdAt"], login(c), "commented") for c in comments]
+    events += [(r["submittedAt"], login(r), REVIEW_STATES[r["state"]]) for r in reviews if r["state"] in REVIEW_STATES]
     events = sorted(e for e in events if e[0] > since and e[1] not in (me, "", *ignore) and not e[1].endswith("[bot]"))
     if not events:
         return None
@@ -236,17 +233,19 @@ def reply_item(pr: dict, view: dict, me: str, ignore: list[str], project: str | 
     name = f"{pr['repository']['name']}#{pr['number']}"
     return Item(
         source=SOURCE, key=f"replies:{pr['url']}",
-        kind="fyi" if all(w == "approved" for _, _, w in events) else "action",
+        kind=FYI if all(w == "approved" for _, _, w in events) else "action",
         summary=f"{name}: " + ", ".join(f"{p} {listed(w)}" for p, w in said.items()),
-        details="\n".join([pr["title"], *(f"{local(t)} {p} {w}" for t, p, w in events)]),
-        people=", ".join(said), project=project, url=pr["url"], happened_at=local(events[-1][0]),
+        details="\n".join([pr["title"], *(f"{local_iso(t)} {p} {w}" for t, p, w in events)]),
+        people=", ".join(said), project=project, url=pr["url"], happened_at=local_iso(events[-1][0]),
     )
 
 
-def ci_item(pr: dict, view: dict, project: str | None) -> Item | None:
+def ci_item(pr: dict, project: str | None) -> Item | None:
     """The checks failing on the PR's last commit, with links to their builds."""
+    commits = nodes(pr.get("commits"))
+    rollup = (commits[0].get("commit") or {}).get("statusCheckRollup") or {} if commits else {}
     latest: dict[str, tuple[str, str, str]] = {}
-    for check in view.get("statusCheckRollup") or []:
+    for check in nodes(rollup.get("contexts")):
         name = check.get("context") or check.get("name") or "?"
         state = check.get("state") or check.get("conclusion") or ""
         when = check.get("startedAt") or check.get("completedAt") or check.get("createdAt") or ""
@@ -262,19 +261,13 @@ def ci_item(pr: dict, view: dict, project: str | None) -> Item | None:
         summary=f"CI fails on {pr['repository']['name']}#{pr['number']}: {', '.join(failing)}",
         details="\n".join([pr["title"], *(f"{name}: {url}" for name, (_, _, url) in failing.items())]),
         project=project, url=first[2] or pr["url"],
-        happened_at=local(max(when for when, _, _ in failing.values())),
+        happened_at=local_iso(max(when for when, _, _ in failing.values())),
     )
 
 
 def listed(words: list[str]) -> str:
     return " and ".join([", ".join(words[:-1]), words[-1]]) if len(words) > 1 else words[0]
 
-
-def local(stamp: str) -> str | None:
-    """GitHub's UTC times in the local zone, like the rest of the items."""
-    if not stamp:
-        return None
-    return datetime.fromisoformat(stamp).astimezone().isoformat(timespec="seconds")
 
 
 def archive_finished(db: sqlite3.Connection) -> int:

@@ -1,5 +1,6 @@
 import contextlib
 import io
+import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
@@ -40,9 +41,23 @@ class NoteCommandTest(unittest.TestCase):
             [note] = list_notes(database, NOTE)
             database.close()
             self.assertEqual(note.tags, ("home", "wifi"))
+            # Only the tags not already in the summary are echoed
+            out = io.StringIO()
+            self.assertEqual(run(config, "Ask about #home-repairs today #home", out=out), 0)
+            self.assertEqual(out.getvalue(), "Note 3 created: Ask about #home-repairs today (#home)\n")
             with contextlib.redirect_stderr(io.StringIO()) as error:
                 self.assertEqual(run(config, "  "), 2)
             self.assertIn("Nothing to save", error.getvalue())
+
+    def test_a_database_error_is_one_line(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            config = Config(database_path=Path(tmp) / "taf.sqlite3", warnings=["watch: must be a mapping of settings, ignoring it"])
+            with (
+                patch("taf.note_command.create_note", side_effect=sqlite3.OperationalError("database is locked")),
+                contextlib.redirect_stderr(io.StringIO()) as error,
+            ):
+                self.assertEqual(run(config, "Call the bank", out=io.StringIO()), 1)
+        self.assertEqual(error.getvalue(), "watch: must be a mapping of settings, ignoring it\nDatabase Error: database is locked\n")
 
     def test_main_runs_it_without_the_tui(self) -> None:
         with (
@@ -50,11 +65,10 @@ class NoteCommandTest(unittest.TestCase):
             patch("taf.__main__.load_config") as config,
             patch("taf.__main__.note_command.run", return_value=0) as command,
         ):
-            for kind in ("todo", "note"):
-                with self.assertRaises(SystemExit) as raised:
-                    main([kind, "Call", "the bank #money"])
-                self.assertEqual(raised.exception.code, 0)
-                command.assert_called_with(config.return_value, "Call the bank #money", kind)
+            with self.assertRaises(SystemExit) as raised:
+                main(["note", "Call", "the bank #money"])
+            self.assertEqual(raised.exception.code, 0)
+            command.assert_called_with(config.return_value, "Call the bank #money", "note")
         start.assert_not_called()
         with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as raised:
             main(["note"])

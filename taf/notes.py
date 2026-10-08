@@ -20,6 +20,8 @@ DEFAULT_STATUS = "open"
 # YafYaf's rule for a tag: a #word starting with a letter, not glued to what precedes it
 TAG = re.compile(r"(?<![\w&/#-])#(?P<name>[a-z][a-z0-9_-]*)", re.IGNORECASE)
 INLINE_CODE = re.compile(r"`[^`\n]*`")
+# A markdown heading, its text without the #s, a closing run of #s left out too
+HEADING = re.compile(r"#{1,6}\s+(.*?)(?:\s+#+)?\s*$")
 
 
 @dataclass(frozen=True, slots=True)
@@ -45,6 +47,25 @@ class Note:
     def summary(self) -> str:
         """The first line with text, what the list shows."""
         return next((line.strip() for line in self.content.splitlines() if line.strip()), "")
+
+    @property
+    def links(self) -> list[tuple[str, str | None]]:
+        """A watch item has links; a note has none."""
+        return []
+
+    @property
+    def gray(self) -> bool:
+        """Whether its row is drawn gray."""
+        return self.done
+
+    @property
+    def row_key(self) -> str:
+        """Its row's key in a table."""
+        return str(self.id)
+
+    @property
+    def date_text(self) -> str:
+        return date_line(self)
 
 
 def front_matter(note: Note) -> dict[str, str]:
@@ -90,6 +111,18 @@ def find_tags(text: str) -> list[tuple[int, int, str]]:
 def tags_of(content: str) -> list[str]:
     """The content's tags, each once, in the order they first appear."""
     return list(dict.fromkeys(name for _, _, name in find_tags(content)))
+
+
+def extra_tags(note: Note) -> tuple[str, ...]:
+    """The note's tags that are not in its summary, which a one-line view adds after it."""
+    shown = set(tags_of(note.summary))
+    return tuple(name for name in note.tags if name not in shown)
+
+
+def heading_text(summary: str) -> str:
+    """A heading's text, without its #s; any other summary as it is."""
+    match = HEADING.match(summary)
+    return match.group(1) if match else summary
 
 
 # is:open or is:done in a search, like GitHub's is:open and is:closed, which means done here too

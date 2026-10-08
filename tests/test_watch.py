@@ -19,7 +19,9 @@ from taf.watch.items import Item, get_cursor, get_item, list_items, recent_runs,
 
 class Case(unittest.TestCase):
     def setUp(self):
-        self.tmp = Path(tempfile.mkdtemp())
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.tmp = Path(tmp.name)
         self.config = Config(database_path=self.tmp / "taf.sqlite3")
         self.db = open_database(self.config.database_path)
         self.addCleanup(self.db.close)
@@ -234,7 +236,7 @@ class SlackTest(Case):
                         "pages": 1, "more_pages_left": False, "last_message_ts": None, "error": None})
         with mock.patch("time.time", return_value=10_000.0):
             report = slack.collect(self.db, self.config, since=5_000.0, run=run)
-        self.assertEqual((report.items, report.error), (3, None))
+        self.assertEqual((len(report.found), report.error), (3, None))
         self.assertEqual(float(get_cursor(self.db, "slack")), 10_000.0 - slack.OVERLAP_SECONDS)
         self.assertEqual({r["project"] for r in list_items(self.db)}, {"rwgps", "follow-privacy-levels", None})
         self.assertEqual([p.channels for p in projects.list_projects(self.db) if p.name != "rwgps"],
@@ -272,8 +274,7 @@ class SlackTest(Case):
 
         self.assertIn("- id 1, key C1:1 [rwgps] action: Deploy friends-follow", run.calls[0][0])
         self.assertNotIn("Review PR", run.calls[0][0])
-        self.assertEqual((report.items, report.closed), (1, 1))
-        self.assertEqual((report.found, report.closed_summaries), (["Fix flaky test with parkPointer"], ["Deploy friends-follow"]))
+        self.assertEqual((report.found, report.closed), (["Fix flaky test with parkPointer"], ["Deploy friends-follow"]))
         rows = {r["id"]: r for r in list_items(self.db, status=None)}
         self.assertEqual(len(rows), 3)
         self.assertEqual(rows[1]["status"], "done")

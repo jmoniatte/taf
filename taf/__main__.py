@@ -51,21 +51,6 @@ def log_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def note_parser(kind: str) -> argparse.ArgumentParser:
-    """taf note's parser, or taf todo's."""
-    example = "Refactor the subscription model #rails" if kind == "todo" else "The staging password is in 1Password #work"
-    parser = argparse.ArgumentParser(
-        prog=f"taf {kind}",
-        description=f"Write a {kind} without the TUI. #tags at the end go on their own line, after a blank one.",
-        epilog=f'example:\n  taf {kind} "{example}"\n\nQuote it: the shell reads an unquoted #tag as a comment.',
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-    )
-    parser.add_argument("message", nargs="+", help=f"the {kind}")
-    if kind == "todo":
-        parser.epilog += "\n\ntaf todo list|show|done|reopen: your todos (taf todo list --help); taf todo alone lists the open ones"
-    return parser
-
-
 def main(argv: Sequence[str] | None = None) -> None:
     argv = list(sys.argv[1:] if argv is None else argv)
     if argv[:1] == ["log"]:
@@ -73,14 +58,9 @@ def main(argv: Sequence[str] | None = None) -> None:
         args = log_parser().parse_intermixed_args(argv[1:])
         raise SystemExit(log_command.run(load_config(), " ".join(args.message), view=args.view, edit=args.edit))
     if argv[:1] in (["todo"], ["todos"]):
-        rest = argv[1:] or ["list"]
-        # A todo whose first word is one of these runs it: quote the todo or start it differently
-        if rest[0] in todo_command.COMMANDS:
-            raise SystemExit(todo_command.main(load_config(), rest))
-        args = note_parser("todo").parse_args(rest)
-        raise SystemExit(note_command.run(load_config(), " ".join(args.message), "todo"))
+        raise SystemExit(todo_command.main(argv[1:]))
     if argv[:1] == ["note"]:
-        args = note_parser("note").parse_args(argv[1:])
+        args = note_command.parser("note").parse_args(argv[1:])
         raise SystemExit(note_command.run(load_config(), " ".join(args.message), "note"))
     if argv[:1] in (["watch"], ["watches"]):
         from .watch import cli
@@ -91,13 +71,12 @@ def main(argv: Sequence[str] | None = None) -> None:
         description="Todos, notes and a log of the work done, in the terminal.",
         epilog=(
             "taf log: log a message, or show or edit the logs, without the TUI (taf log --help); "
-            "taf todo: write, list and close todos (taf todo --help); taf note: write a note (taf note --help); "
-            "taf watch: what needs you from Slack and GitHub (taf watch --help)"
+            "taf todo (or todos): write, list and close todos (taf todo --help); taf note: write a note (taf note --help); "
+            "taf watch (or watches): what needs you from Slack and GitHub (taf watch --help)"
         ),
     )
     parser.add_argument("--version", action="version", version=f"taf {__version__}")
     parser.parse_args(argv)
-    # Only here: the commands above never load Textual
     from .app import TafApp
 
     start("taf", TafApp)

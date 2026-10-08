@@ -11,8 +11,8 @@ from unittest.mock import patch
 
 from taf.config import Config
 from taf.database import open_database
-from taf.log_command import parse_markdown, render_markdown, render_terminal, run
-from taf.logs import Log, create_log, logs_between
+from taf.log_command import render_terminal, run
+from taf.logs import create_log, logs_between
 from taf.message import Inference
 
 TODAY = date(2026, 9, 30)
@@ -132,46 +132,59 @@ class LogCommandTest(unittest.TestCase):
         kept.unlink()
         self.assertEqual(len(self.stored()), 3)
 
-        # One day: the message names it alone
-        with patch.dict("os.environ", {"EDITOR": python_editor("pass")}):
+        # One day: the message names it alone; written unchanged, it is saved all the same
+        with patch.dict("os.environ", {"EDITOR": python_editor("import sys, pathlib; p = pathlib.Path(sys.argv[1]); p.write_text(p.read_text())")}):
             output = self.run_command(edit=1)
         self.assertTrue(output.endswith("✓ Logs updated for 2026-09-30\n"))
         self.assertEqual(len(self.stored()), 3)
 
-    def test_markdown_round_trip(self) -> None:
-        logs = [
-            Log(2, "Coded @2h", datetime(2026, 9, 30, 11, 0), "Coded", "code", "rails", 120),
-            Log(1, "Met @1h", datetime(2026, 9, 29, 9, 5), "Met", "meet", "rails", 60),
-        ]
-        markdown = render_markdown(logs)
-        self.assertEqual(markdown, "# 2026-09-30 - Wednesday\n* 11:00 - Coded @2h\n\n# 2026-09-29 - Tuesday\n* 09:05 - Met @1h\n")
-        self.assertEqual(
-            parse_markdown("* 08:00 - before any day\n" + markdown),
-            ([date(2026, 9, 30), date(2026, 9, 29)], [(datetime(2026, 9, 30, 11, 0), "Coded @2h"), (datetime(2026, 9, 29, 9, 5), "Met @1h")]),
+    def test_edit_saves_nothing_when_the_editor_fails_or_does_not_write_or_a_day_would_be_lost(self) -> None:
+        self.add("2026-09-28 09:00", "Monday @1h")
+        self.add("2026-09-30 09:00", "Met for sync @1h15")
+        before = self.stored()
+        # :cq in vim, after writing the file
+        with patch.dict("os.environ", {"EDITOR": python_editor("import sys; open(sys.argv[1], 'w').write('# 2026-09-30\\n'); sys.exit(1)")}):
+            with patch("sys.stderr", new=io.StringIO()) as error:
+                self.assertEqual(run(self.config, edit=1, today=TODAY, out=io.StringIO()), 1)
+        self.assertIn("exited with status 1, nothing was saved", error.getvalue())
+        # :q, without writing
+        with patch.dict("os.environ", {"EDITOR": python_editor("pass")}):
+            self.assertEqual(self.run_command(edit=1), "")
+        self.assertEqual(self.stored(), before)
+
+        # A day outside the edit that has logs would lose them: refused, the file kept
+        code = "import sys; open(sys.argv[1], 'w').write('# 2026-09-30\\n* 10:00 - New\\n# 2026-09-28\\n* 08:00 - Replaced\\n')"
+        with patch.dict("os.environ", {"EDITOR": python_editor(code)}), patch("sys.stderr", new=io.StringIO()) as error:
+            self.assertEqual(run(self.config, edit=1, today=TODAY, out=io.StringIO()), 1)
+        self.assertIn("2026-09-28 already has logs: edit it on its own. Nothing saved; your edit is kept in", error.getvalue())
+        kept = Path(error.getvalue().rsplit(" ", 1)[1].strip())
+        self.assertIn("Replaced", kept.read_text())
+        kept.unlink()
+        self.assertEqual(self.stored(), before)
+
+        # An empty day in the edit has its header; one outside it with no logs may be added
+        code = (
+            "import sys, pathlib; path = pathlib.Path(sys.argv[1]); "
+            f"open({str(self.tmp / 'seen.md')!r}, 'w').write(path.read_text()); "
+            "path.write_text('# 2026-09-29\\n* 10:00 - Tuesday\\n# 2026-09-27\\n* 10:00 - Sunday\\n')"
         )
-        self.assertEqual(render_terminal([], color=False), "")
-        # A log with no message is kept, its space trimmed or not; a broken entry under a day is an error
-        self.assertEqual(
-            parse_markdown("# 2026-09-30\n* 11:00 - \n* 12:00 -\n"),
-            ([date(2026, 9, 30)], [(datetime(2026, 9, 30, 11, 0), ""), (datetime(2026, 9, 30, 12, 0), "")]),
-        )
-        with self.assertRaisesRegex(ValueError, r"'\* 9:00 - Met' is not a log"):
-            parse_markdown("# 2026-09-30\n* 9:00 - Met\n")
-        for line in ("- 09:00 - formatted", "  * 10:00 - indented", "*\t11:00 - tab"):
-            with self.assertRaisesRegex(ValueError, "is not a log"):
-                parse_markdown(f"# 2026-09-30\n{line}\n")
-        self.assertEqual(parse_markdown("* 9:00 - before any day\nA note\n"), ([], []))
-        # An empty day gets a header too, in its place among the others
-        self.assertEqual(
-            render_markdown(logs, [date(2026, 10, 1), date(2026, 9, 30)]),
-            "# 2026-10-01 - Thursday\n\n# 2026-09-30 - Wednesday\n* 11:00 - Coded @2h\n\n# 2026-09-29 - Tuesday\n* 09:05 - Met @1h\n",
-        )
+        with patch.dict("os.environ", {"EDITOR": python_editor(code)}):
+            self.run_command(edit=2)
+        self.assertEqual((self.tmp / "seen.md").read_text(), "# 2026-09-30 - Wednesday\n* 09:00 - Met for sync @1h15\n\n# 2026-09-29 - Tuesday\n")
+        self.assertEqual([row[1] for row in self.stored()], ["Met for sync @1h15", "Tuesday", "Monday @1h", "Sunday"])
 
     def test_a_database_that_cannot_open_is_an_error(self) -> None:
         self.config.database_path = self.tmp
         with patch("sys.stderr", new=io.StringIO()) as error:
             self.assertEqual(run(self.config, out=io.StringIO()), 1)
         self.assertIn(f"Database Error: cannot open {self.tmp}", error.getvalue())
+
+    def test_a_database_error_after_opening_is_one_line(self) -> None:
+        with patch("taf.log_command.create_log", side_effect=sqlite3.OperationalError("database is locked")):
+            with patch("sys.stderr", new=io.StringIO()) as error:
+                self.assertEqual(run(self.config, "Coded", out=io.StringIO()), 1)
+        self.assertEqual(error.getvalue(), "Database Error: database is locked\n")
+        self.assertEqual(render_terminal([], color=False), "")
 
 
 if __name__ == "__main__":

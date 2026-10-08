@@ -16,16 +16,14 @@ from . import github, slack
 from .config import Config, load_config
 from ..database import open_database
 from .items import (
-    KINDS, REVIEWS, STATUSES, Item, is_review, get_item, list_items, now, recent_runs, record_run, save_item, set_done, set_pinned,
-    set_project,
+    ITEM_STATUSES, KINDS, Item, get_item, list_items, now, recent_runs, save_item, set_done, set_pinned, set_project,
 )
 from .projects import (
     ProjectError, current_branch, get_project, link, list_projects, merge, project_for_branch,
     rename, set_project_status, unlink,
 )
+from .view import Group, grouped, load_items
 
-
-# What every message starts with
 NAME = "taf watch"
 
 
@@ -54,13 +52,13 @@ def parser() -> argparse.ArgumentParser:
     ls = sub.add_parser("list", help="open items of the current branch's project (all if none matches)")
     ls.add_argument("--project", help=f"a project name (see {NAME} project)")
     ls.add_argument("--all", action="store_true", help="every project")
-    ls.add_argument("--status", default="open", choices=[*STATUSES, "all"])
+    ls.add_argument("--status", default="open", choices=[*ITEM_STATUSES, "all"])
     ls.add_argument("--json", action="store_true")
     ls.set_defaults(run=cmd_list, words=[])
 
     search = sub.add_parser("search", help="items whose text has every word, in every project")
     search.add_argument("words", nargs="+")
-    search.add_argument("--status", default="all", choices=[*STATUSES, "all"])
+    search.add_argument("--status", default="all", choices=[*ITEM_STATUSES, "all"])
     search.add_argument("--json", action="store_true")
     search.set_defaults(run=cmd_list, project=None, all=True)
 
@@ -134,15 +132,24 @@ def project_parser(p: argparse.ArgumentParser) -> None:
         cmd.add_argument("name")
 
 
+def resolve_project(db: sqlite3.Connection, name: str | None) -> str | None:
+    """A --project value: none for no project, a name that must exist, or by default the current
+    branch's project."""
+    if name == "none":
+        return None
+    if name:
+        if get_project(db, name) is None:
+            raise ProjectError(f"no project named {name}; see {NAME} project")
+        return name
+    return project_for_branch(db, current_branch(Path.cwd()))
+
+
 def cmd_list(db: sqlite3.Connection, config: Config, args) -> int:
-    project = None
-    if args.project:
-        if get_project(db, args.project) is None:
-            print(f"{NAME}: no project named {args.project}; see {NAME} project", file=sys.stderr)
-            return 2
-        project = args.project
-    elif not args.all:
-        project = project_for_branch(db, current_branch(Path.cwd()))
+    try:
+        project = resolve_project(db, args.project) if args.project or not args.all else None
+    except ProjectError as error:
+        print(f"{NAME}: {error}", file=sys.stderr)
+        return 2
     status = None if args.status == "all" else args.status
     rows = list_items(db, project, status, args.words)
     if args.json:
@@ -169,15 +176,11 @@ def cmd_show(db: sqlite3.Connection, config: Config, args) -> int:
 
 
 def cmd_add(db: sqlite3.Connection, config: Config, args) -> int:
-    if args.project == "none":
-        project = None
-    elif args.project:
-        if get_project(db, args.project) is None:
-            print(f"{NAME}: no project named {args.project}; see {NAME} project", file=sys.stderr)
-            return 2
-        project = args.project
-    else:
-        project = project_for_branch(db, current_branch(Path.cwd()))
+    try:
+        project = resolve_project(db, args.project)
+    except ProjectError as error:
+        print(f"{NAME}: {error}", file=sys.stderr)
+        return 2
     item = Item(source="manual", key=uuid.uuid4().hex, kind=args.kind, summary=args.summary.strip(),
                 project=project, details=args.details.strip(), url=args.url, due=args.due, happened_at=now())
     save_item(db, item)
@@ -191,7 +194,7 @@ def cmd_done(db: sqlite3.Connection, config: Config, args) -> int:
 
 
 def cmd_pin(db: sqlite3.Connection, config: Config, args) -> int:
-    return missing_items([item_id for item_id in args.ids if not set_pinned(db, item_id, args.pinned)])
+    return missing_items(set_pinned(db, args.ids, args.pinned))
 
 
 def missing_items(ids: list[int]) -> int:
@@ -210,25 +213,23 @@ def cmd_collect(db: sqlite3.Connection, config: Config, args) -> int:
             print(f"{NAME}: another collect is running", file=sys.stderr)
             return 1
         if args.source in (None, "github"):
-            started_at, started = now(), time.time()
             gh = github.sync(db, config.github)
-            record_run(db, "github", started_at, None, None, len(gh.found), gh.error)
             print(f"github: {gh.open_prs} open PRs, {len(gh.found)} new items, {len(gh.closed)} closed, "
                   f"{gh.new_projects} new projects, {gh.archived} archived")
             if gh.error:
                 print(f"{NAME}: {gh.error}", file=sys.stderr)
                 failed = True
-            notify("GitHub", gh.found, gh.closed, gh.error, time.time() - started)
+            notify("GitHub", gh.found, gh.closed, gh.error, gh.seconds)
         if args.source in (None, "slack"):
             since = time.time() - args.hours * 3600 if args.hours else None
             report = slack.collect(db, config, since)
             cost = f"${report.cost_usd:.3f}" if report.cost_usd is not None else "unknown cost"
-            print(f"slack: {report.items} items, {report.closed} closed, {report.pages or 0} pages, {cost}"
+            print(f"slack: {len(report.found)} items, {len(report.closed)} closed, {report.pages or 0} pages, {cost}"
                   + (", more pages left" if report.more_pages_left else ""))
             if report.error:
                 print(f"{NAME}: {report.error}", file=sys.stderr)
                 failed = True
-            notify("Slack", report.found, report.closed_summaries, report.error, report.seconds)
+            notify("Slack", report.found, report.closed, report.error, report.seconds)
     return 1 if failed else 0
 
 
@@ -267,10 +268,7 @@ def cmd_project(db: sqlite3.Connection, config: Config, args) -> int:
             elif not unlink(db, kind, value):
                 raise ProjectError(f"{kind} {value} is not linked")
         elif args.action == "assign":
-            name = None if args.name == "none" else args.name
-            if name and get_project(db, name) is None:
-                raise ProjectError(f"no project named {name}")
-            missing = set_project(db, args.ids, name)
+            missing = set_project(db, args.ids, resolve_project(db, args.name))
             if missing:
                 raise ProjectError(f"no item {', '.join(map(str, missing))}")
         elif args.action == "rename":
@@ -302,20 +300,13 @@ def print_projects(db: sqlite3.Connection, args) -> int:
 
 
 def cmd_status_overview(db: sqlite3.Connection, config: Config, args) -> int:
-    rows = list_items(db)
-    reviews = [row for row in rows if is_review(row["source"], row["key"])]
-    if reviews:
-        print(f"{REVIEWS} ({len(reviews)})")
-        for row in reviews:
-            print("  " + line(row, with_project=False))
-    groups: dict[str | None, list[sqlite3.Row]] = {}
-    for row in rows:
-        if not is_review(row["source"], row["key"]):
-            groups.setdefault(row["project"], []).append(row)
-    for project in sorted(groups, key=lambda p: (p is None, -len(groups[p]), p or "")):
-        print(f"{project or 'No project'} ({len(groups[project])})")
-        for row in groups[project]:
-            print("  " + line(row, with_project=False))
+    """Every open item, in the Watch tab's order (view.grouped)."""
+    rows = {row["id"]: row for row in list_items(db)}
+    for shown in grouped(load_items(db, status="open")):
+        if isinstance(shown, Group):
+            print(f"{shown.name} ({shown.count})")
+        else:
+            print("  " + line(rows[shown.id], with_project=False))
     if not rows:
         print("Nothing open.")
     last = db.execute("SELECT * FROM watch_runs WHERE source = 'slack' ORDER BY id DESC LIMIT 1").fetchone()

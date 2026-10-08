@@ -1,24 +1,16 @@
 """`taf log`: the Ruby fini's command line, in the shell without the TUI; no Textual."""
 
-import os
-import re
-import shlex
 import sqlite3
-import subprocess
 import sys
-import tempfile
-from datetime import date, datetime, timedelta
-from pathlib import Path
-from collections.abc import Iterable
+from datetime import date, timedelta
 from typing import TextIO
 
+from .command import RED, RESET, open_for_command, print_error
 from .config import Config
-from .database import open_database
-from .logs import Log, by_day, create_log, format_duration, logs_between, replace_days
+from .editor import EditorError, edit_written_text, keep
+from .logs import Log, by_day, create_log, format_duration, logs_between, meta_text, parse_markdown, render_markdown, replace_days
 
 # The ANSI codes the Ruby fini used, so the output looks the same in the terminal's own colors
-RESET = "\033[0m"
-RED = "\033[31m"
 GREEN = "\033[32m"
 CYAN = "\033[36m"
 GREY = "\033[37m"
@@ -26,12 +18,6 @@ BOLD = "\033[1m"
 ITALIC = "\033[3m"
 # What `clear` prints; the Ruby fini cleared the screen before each command
 CLEAR = "\033[H\033[2J\033[3J"
-
-DAY_HEADER = re.compile(r"^# (\d{4}-\d{2}-\d{2})")
-# The message may be empty, as some old logs are, and an editor may trim the space before it
-ENTRY = re.compile(r"^\* (\d{2}:\d{2}) -(?: (.*))?$")
-# What an entry may look like once mistyped or reformatted: "- 9:00 - x", "  * 10:00 - x"
-ENTRY_LIKE = re.compile(r"^\s*[-*+]\s*\d{1,2}:\d{2}")
 
 
 def run(
@@ -46,12 +32,8 @@ def run(
     them, show today. Returns the exit code."""
     today = today or date.today()
     color = out.isatty()
-    for warning in config.warnings:
-        print(warning, file=sys.stderr)
-    try:
-        connection = open_database(config.database_path)
-    except (sqlite3.Error, OSError) as error:
-        print(paint(f"Database Error: cannot open {config.database_path}: {error}", RED, color), file=sys.stderr)
+    connection = open_for_command(config, color)
+    if connection is None:
         return 1
     try:
         if color:
@@ -66,6 +48,9 @@ def run(
         else:
             show_days(connection, today, today, out, color)
         return 0
+    except sqlite3.Error as error:
+        print_error(f"Database Error: {error}", color)
+        return 1
     finally:
         connection.close()
 
@@ -77,25 +62,33 @@ def show_days(connection: sqlite3.Connection, first: date, last: date, out: Text
 def edit_days(
     connection: sqlite3.Connection, config: Config, first: date, last: date, out: TextIO, color: bool
 ) -> int:
-    """Open the days in $EDITOR as markdown, then replace the logs of every day left in the file
-    with the file's entries."""
-    content = render_markdown(logs_between(connection, first, last))
-    with tempfile.NamedTemporaryFile("w", prefix="taf-edit-", suffix=".md", delete=False) as file:
-        file.write(content)
-    path = Path(file.name)
-    editor = os.environ.get("EDITOR") or "vim"
-    subprocess.run([*shlex.split(editor), str(path)])
-
+    """Open the days in $EDITOR as markdown, as the Logs tab does, then replace the logs of every
+    day left in the file with the file's entries. Nothing is saved when the editor fails or quits
+    without writing, nor when the file adds a day that already has logs, which it would lose."""
+    days = [first + timedelta(days=n) for n in range((last - first).days + 1)]
     try:
-        days, entries = parse_markdown(path.read_text(encoding="utf-8"))
-    except ValueError as error:
-        print(paint(f"{error}. Nothing saved; your edit is kept in {path}", RED, color), file=sys.stderr)
+        content = edit_written_text(render_markdown(logs_between(connection, first, last), days), "taf-edit-")
+    except EditorError as error:
+        print_error(str(error), color)
         return 1
-    if not days:
-        path.unlink()
+    if content is None:
         return 0
-    replace_days(connection, days, entries, config.action, config.context)
-    path.unlink()
+    try:
+        edited_days, entries = parse_markdown(content)
+    except ValueError as error:
+        print_error(f"{error}. Nothing saved; your edit is kept in {keep(content)}", color)
+        return 1
+    if taken := sorted({day for day in edited_days if not first <= day <= last and logs_between(connection, day, day)}):
+        names = ", ".join(map(str, taken))
+        print_error(f"{names} already has logs: edit it on its own. Nothing saved; your edit is kept in {keep(content)}", color)
+        return 1
+    if not edited_days:
+        return 0
+    try:
+        replace_days(connection, edited_days, entries, config.action, config.context)
+    except sqlite3.Error as error:
+        print_error(f"Database Error: {error}. Nothing saved; your edit is kept in {keep(content)}", color)
+        return 1
 
     show_days(connection, first, last, out, color)
     span = f"{last}" if first == last else f"{first} to {last}"
@@ -117,57 +110,12 @@ def render_terminal(logs: list[Log], color: bool = True) -> str:
             parts = ["*", f"{log.logged_at:%H:%M}", "-", paint(log.text, BOLD, color)]
             if log.duration is not None:
                 parts.append(paint(format_duration(log.duration), CYAN, color))
-            meta = " ".join(part for part in (log.action and f"+{log.action}", log.context and f"@{log.context}") if part)
-            if meta:
-                parts.append(paint(paint(f"[{meta}]", GREY, color), ITALIC, color))
+            if meta := meta_text(log.action, log.context):
+                parts.append(paint(paint(meta, GREY, color), ITALIC, color))
             lines.append(" ".join(parts))
         lines.append("")
     return "".join(f"{line}\n" for line in lines)
 
 
-def render_markdown(logs: list[Log], empty_days: Iterable[date] = ()) -> str:
-    """The logs by day for the editor, each as it was typed, the last day first; empty_days get a
-    header too, so logs can be written under it:
-
-    # 2026-09-30 - Wednesday
-    * 09:00 - Reviewed PR @15m
-    """
-    logs_by_day = dict(by_day(logs))
-    days = []
-    for day in sorted({*logs_by_day, *empty_days}, reverse=True):
-        day_logs = logs_by_day.get(day, [])
-        lines = [f"# {day} - {day:%A}", *(f"* {log.logged_at:%H:%M} - {log.message}" for log in day_logs), ""]
-        days.append("\n".join(lines))
-    return "\n".join(days)
-
-
-def parse_markdown(content: str) -> tuple[list[date], list[tuple[datetime, str]]]:
-    """The days whose header is in the file, and every entry under one, as (when, message).
-
-    Other lines are ignored; ValueError for a date or time that does not exist, and for a line
-    under a day that starts like an entry but is not one, since its day would lose it.
-    """
-    days: list[date] = []
-    entries: list[tuple[datetime, str]] = []
-    day = None
-    for line in content.splitlines():
-        if header := DAY_HEADER.match(line):
-            day = _parse(header.group(1), "%Y-%m-%d", f"'{line}' has no valid date").date()
-            days.append(day)
-        elif day is not None and (entry := ENTRY.match(line)):
-            time = _parse(entry.group(1), "%H:%M", f"'{line}' has no valid time").time()
-            entries.append((datetime.combine(day, time), entry.group(2) or ""))
-        elif day is not None and (line.startswith("* ") or ENTRY_LIKE.match(line)):
-            raise ValueError(f"'{line}' is not a log, '* HH:MM - message'")
-    return days, entries
-
-
 def paint(text: str, code: str, color: bool) -> str:
     return f"{code}{text}{RESET}" if color else text
-
-
-def _parse(value: str, format: str, error: str) -> datetime:
-    try:
-        return datetime.strptime(value, format)
-    except ValueError:
-        raise ValueError(error) from None

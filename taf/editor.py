@@ -56,6 +56,14 @@ def _edit(text: str, prefix: str) -> tuple[str, bool]:
         path.unlink(missing_ok=True)
 
 
+def keep(text: str, prefix: str = "taf-edit-") -> str:
+    """Save text to a file that stays, for an edit that could not be saved; returns its path."""
+    fd, name = tempfile.mkstemp(prefix=prefix, suffix=".md")
+    with open(fd, "w", encoding="utf-8") as file:
+        file.write(text)
+    return name
+
+
 def field_lines(fields: dict[str, str]) -> str:
     """One "key : value" line per field, the colons lined up."""
     width = max(map(len, fields), default=0)

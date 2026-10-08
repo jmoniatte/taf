@@ -73,12 +73,9 @@ SCHEMA = {
 
 @dataclass
 class RunReport:
-    since: float
-    items: int
-    closed: int
-    # Summaries for the desktop notification
+    # Summaries of the items found and closed
     found: list[str]
-    closed_summaries: list[str]
+    closed: list[str]
     cost_usd: float | None
     pages: int | None
     more_pages_left: bool
@@ -155,9 +152,9 @@ def collect(db: sqlite3.Connection, config: Config, since: float | None = None, 
     if error is None:
         set_cursor(db, SOURCE, str(next_cursor(output, since, started)))
     record_run(db, SOURCE, started_at, result.cost_usd, output.get("pages"), len(found), error)
-    closed_summaries = [r["summary"] for r in open_items if r["id"] in to_close]
-    return RunReport(since, len(found), len(to_close), found, closed_summaries, result.cost_usd,
-                     output.get("pages"), bool(output.get("more_pages_left")), error, time.time() - started)
+    closed = [r["summary"] for r in open_items if r["id"] in to_close]
+    return RunReport(found, closed, result.cost_usd, output.get("pages"), bool(output.get("more_pages_left")), error,
+                     time.time() - started)
 
 
 def search_error(result: ClaudeResult) -> str | None:

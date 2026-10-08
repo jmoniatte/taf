@@ -12,6 +12,7 @@ from textual.widgets import Select, Static
 from tui_kit.config import save_setting
 from tui_kit.shortcuts import GENERAL
 
+from ..config import STATS_SHOW
 from ..stats import (
     Entry,
     Period,
@@ -63,13 +64,15 @@ class StatsView(Vertical):
         self.period = 0
         # None is all of them
         self.action: str | None = None
+        self.time_off: set[date] = set()
+        self.holidays: set[date] = set()
 
     def compose(self) -> ComposeResult:
         with Horizontal(id="stats-controls"):
             yield Select([("Last 12 months", 0)], value=0, allow_blank=False, id="stats-period")
             yield Select([("All actions", ALL_ACTIONS)], value=ALL_ACTIONS, allow_blank=False, id="stats-action")
             yield Select(
-                [("Hours", "hours"), ("Percentages", "percentages")],
+                [(show.capitalize(), show) for show in STATS_SHOW],
                 value=self.app.config.stats_show,
                 allow_blank=False,
                 id="stats-show",
@@ -142,24 +145,23 @@ class StatsView(Vertical):
         # Not loaded yet: the tab has not shown
         if not self.periods:
             return
-        self._set_actions()
+        percentages = self.app.config.stats_show == "percentages"
+        self._set_actions(percentages)
         empty = self.query_one("#stats-empty", Static)
         empty.update(self.app.database_error or "No logs with a duration yet")
         empty.display = not self.entries
         self.query_one(StatsScroll).display = bool(self.entries)
         if self.entries:
-            percentages = self.app.config.stats_show == "percentages"
             text = stats_text(
                 self.entries, self.periods[self.period], self.action, self.app.palette, date.today(), percentages, self.time_off, self.holidays
             )
             self.query_one("#stats-text", Static).update(text)
 
-    def _set_actions(self) -> None:
+    def _set_actions(self, percentages: bool) -> None:
         """The period's actions, the most time first, with their hours or share; one the period lacks is All."""
         period = self.periods[self.period]
         totals = minutes_by_action(within(self.entries, period))
         everything = sum(minutes for _, minutes in totals)
-        percentages = self.app.config.stats_show == "percentages"
         if self.action not in dict(totals):
             self.action = None
         selector = self.query_one("#stats-action", Select)

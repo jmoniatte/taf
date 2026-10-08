@@ -1,31 +1,31 @@
-"""The Watch tab's list: the items collected from Slack and GitHub, grouped by project; no Textual."""
+"""The Watch tab's list: the watch items grouped by project, and when the last collect ended; no
+Textual."""
 
 import sqlite3
 from dataclasses import dataclass
 from datetime import datetime
 
-from ..notes import split_query
-from . import items as stored
-from .items import REVIEWS, is_ci, is_review
+from . import items
+from .items import FYI, is_ci, is_review, parse_local
+from ..notes import long_date
 
-# The kind of item that only informs; shown gray
-FYI = "fyi"
-
-
-# What each of WatchItem.links is, in the full view
+# The heading of the review requests, which have no project
+REVIEWS = "Pull Requests"
+# What each of WatchItem.links is called in the full view
 LINK_NAMES = {"slack": "Slack conversation", "github": "GitHub PR", "jenkins": "Jenkins build", "added": "Link"}
 
 
 @dataclass(frozen=True, slots=True)
 class WatchItem:
-    """A watch item, from Slack or GitHub, shaped like a todo, so the notes' table and detail view show
-    it the same way."""
+    """A watch item, with what the notes' table and detail view read from a todo: id, summary,
+    content, tags, pinned, done, links, gray, row_key and date_text."""
 
     id: int
     source: str
     key: str
+    # Action, question, decision or fyi; not `kind`, which a note uses for note or todo
     item_kind: str
-    title: str
+    summary: str
     details: str
     people: str
     url: str | None
@@ -33,10 +33,11 @@ class WatchItem:
     pinned: bool
     done_at: datetime | None
     created_at: datetime
-    # When it last happened in Slack, else when it was saved: what the order goes by
+    # When it last happened at its source, else when it was saved: what the order goes by
     updated_at: datetime
     project: str | None = None
     tags: tuple[str, ...] = ()
+    # The table draws a check box for it, as for a todo
     is_todo = True
 
     @property
@@ -44,8 +45,18 @@ class WatchItem:
         return self.done_at is not None
 
     @property
-    def summary(self) -> str:
-        return self.title
+    def gray(self) -> bool:
+        """Done, or an fyi, which only informs."""
+        return self.done or self.item_kind == FYI
+
+    @property
+    def row_key(self) -> str:
+        # Its id is another count than the todos'
+        return f"watch:{self.id}"
+
+    @property
+    def date_text(self) -> str:
+        return f"Created {long_date(self.created_at)}"
 
     @property
     def is_review(self) -> bool:
@@ -60,13 +71,9 @@ class WatchItem:
         return [(self.source if self.source in ("slack", "github") else "added", self.url)]
 
     @property
-    def source_name(self) -> str:
-        return {"github": "GitHub", "slack": "Slack"}.get(self.source, self.source)
-
-    @property
     def content(self) -> str:
-        """What the detail view shows and y copies: the summary, the details, who and the link."""
-        lines = [self.title]
+        """What the detail view shows and y copies: the summary, the details, who and the links."""
+        lines = [self.summary]
         if self.details:
             lines += ["", self.details]
         facts = [f"{name}: {value}" for name, value in (("People", self.people), ("Due", self.due), ("Kind", self.item_kind)) if value]
@@ -79,79 +86,73 @@ class WatchItem:
 
 @dataclass(frozen=True, slots=True)
 class Group:
-    """A project's heading in the list; project None is for items with no project, unless title
-    names the heading, as for the reviews."""
+    """A heading in the list: a project's name, "No project", or REVIEWS, with its count and, for the
+    reviews, a linked note: "3 PRs ready to deploy"."""
 
-    project: str | None
+    name: str
     count: int
-    title: str | None = None
-    # After the count, as a link: "3 PRs ready to deploy"
     note: str | None = None
     note_link: str | None = None
 
-    @property
-    def name(self) -> str:
-        return self.title or self.project or "No project"
 
-
-def local(stamp: str | None) -> datetime | None:
-    """The collectors' ISO times, with their zone, as the naive local times taf's own dates are."""
-    if not stamp:
-        return None
-    moment = datetime.fromisoformat(stamp)
-    return moment.astimezone().replace(tzinfo=None) if moment.tzinfo else moment
-
-
-def shown_items(connection: sqlite3.Connection, query: str = "", status: str = "all") -> list[WatchItem]:
+def load_items(connection: sqlite3.Connection, query: str = "", status: str = "all") -> list[WatchItem]:
     """The watch items with every word of the query and the status: open, done or all."""
-    words, _ = split_query(query)
-    rows = stored.list_items(connection, status=None if status == "all" else status, words=words)
+    rows = items.list_items(connection, status=None if status == "all" else status, words=query.split())
     return [_item(row) for row in rows]
 
 
-def grouped(items: list[WatchItem], ready: tuple[int, str] | None = None) -> list[Group | WatchItem]:
-    """The reviews first, under their own heading, then the items under a heading per project, the
-    project with the latest activity first and those with no project last; inside each, pinned first,
-    then the latest first. ready, how many PRs are ready to deploy and their list, follows the reviews'
-    count, a heading of its own when there is no review."""
-    ordered = sorted(items, key=lambda item: (not item.pinned, -item.updated_at.timestamp()))
+def load_item(connection: sqlite3.Connection, item_id: int) -> WatchItem | None:
+    row = items.get_item(connection, item_id)
+    return _item(row) if row else None
+
+
+def mark_done(connection: sqlite3.Connection, item_id: int, done: bool) -> WatchItem | None:
+    items.set_done(connection, [item_id], done)
+    return load_item(connection, item_id)
+
+
+def mark_pinned(connection: sqlite3.Connection, item_id: int, pinned: bool) -> WatchItem | None:
+    items.set_pinned(connection, [item_id], pinned)
+    return load_item(connection, item_id)
+
+
+def grouped(shown: list[WatchItem], ready: tuple[int, str] | None = None) -> list[Group | WatchItem]:
+    """The reviews first, under REVIEWS, then a heading per project, the project with the latest
+    activity first and "No project" last; inside each, pinned first, then the latest first. ready, how
+    many PRs are ready to deploy and their list, is the reviews' note, and makes their heading show
+    with no review."""
+    ordered = sorted(shown, key=lambda item: (not item.pinned, -item.updated_at.timestamp()))
     reviews = [item for item in ordered if item.is_review]
     rows: list[Group | WatchItem] = []
     if reviews or (ready and ready[0]):
-        note, link = (f"{ready[0]} {'PR' if ready[0] == 1 else 'PRs'} ready to deploy", ready[1]) if ready else (None, None)
-        rows = [Group(None, len(reviews), REVIEWS, note, link), *reviews]
-    ordered = [item for item in ordered if not item.is_review]
+        note = f"{ready[0]} {'PR' if ready[0] == 1 else 'PRs'} ready to deploy" if ready else None
+        rows += [Group(REVIEWS, len(reviews), note, ready[1] if ready else None), *reviews]
+    others = [item for item in ordered if not item.is_review]
     groups: dict[str | None, list[WatchItem]] = {}
-    for item in sorted(ordered, key=lambda item: -item.updated_at.timestamp()):
+    for item in sorted(others, key=lambda item: -item.updated_at.timestamp()):
         groups.setdefault(item.project, [])
-    for item in ordered:
+    for item in others:
         groups[item.project].append(item)
     for project in sorted(groups, key=lambda name: name is None):
-        rows.append(Group(project, len(groups[project])))
-        rows.extend(groups[project])
+        rows += [Group(project or "No project", len(groups[project])), *groups[project]]
     return rows
-
-
-# The timer's interval (taf-watch.timer): "N minutes ago" goes minute by minute up to it
-COLLECT_MINUTES = 5
 
 
 def last_collected(connection: sqlite3.Connection) -> datetime | None:
     """When the last collect, from the timer or the Collect button, ended."""
-    row = connection.execute("SELECT max(finished_at) AS at FROM watch_runs").fetchone()
-    return local(row["at"]) if row else None
+    return parse_local(connection.execute("SELECT max(finished_at) AS at FROM watch_runs").fetchone()["at"])
 
 
 def ago(seconds: float) -> str:
-    """5, 10 or 30 seconds ago, then each minute up to the timer's interval (or 10 minutes, so
-    tens follow), then by 10 minutes, then hours, then days."""
+    """5, 10 or 30 seconds ago, then each minute up to 10 (the timer runs every 5), then by 10
+    minutes, then hours, then days."""
     if seconds < 5:
         return "just now"
     for limit, label in ((10, "5 seconds"), (30, "10 seconds"), (60, "30 seconds")):
         if seconds < limit:
             return f"{label} ago"
     minutes = int(seconds // 60)
-    if minutes < 10 or minutes <= COLLECT_MINUTES:
+    if minutes < 10:
         return "1 minute ago" if minutes == 1 else f"{minutes} minutes ago"
     if minutes < 60:
         return f"{minutes // 10 * 10} minutes ago"
@@ -162,36 +163,21 @@ def ago(seconds: float) -> str:
     return "1 day ago" if days == 1 else f"{days} days ago"
 
 
-def get_item(connection: sqlite3.Connection, item_id: int) -> WatchItem | None:
-    row = stored.get_item(connection, item_id)
-    return _item(row) if row else None
-
-
-def set_done(connection: sqlite3.Connection, item_id: int, done: bool) -> WatchItem | None:
-    stored.set_done(connection, [item_id], done)
-    return get_item(connection, item_id)
-
-
-def set_pinned(connection: sqlite3.Connection, item_id: int, pinned: bool) -> WatchItem | None:
-    stored.set_pinned(connection, item_id, pinned)
-    return get_item(connection, item_id)
-
-
 def _item(row: sqlite3.Row) -> WatchItem:
-    created = local(row["created_at"])
+    created = parse_local(row["created_at"])
     return WatchItem(
         id=row["id"],
         source=row["source"],
         key=row["key"],
         item_kind=row["kind"],
-        title=row["summary"],
+        summary=row["summary"],
         details=row["details"],
         people=row["people"],
         url=row["url"],
         due=row["due"],
         pinned=bool(row["pinned"]),
-        done_at=local(row["done_at"]),
+        done_at=parse_local(row["done_at"]),
         created_at=created,
-        updated_at=local(row["happened_at"]) or created,
+        updated_at=parse_local(row["happened_at"]) or created,
         project=row["project"],
     )

@@ -1,6 +1,4 @@
-import os
 import sqlite3
-import tempfile
 from datetime import date, timedelta
 
 from rich.style import Style
@@ -14,9 +12,8 @@ from textual.screen import ModalScreen
 from textual.widgets import Button, Input, Static
 from tui_kit.shortcuts import ACTIONS, GENERAL
 
-from ..editor import EditorError, edit_written_text
-from ..log_command import parse_markdown, render_markdown
-from ..logs import Log, by_day, create_log, format_duration, logs_between, replace_days
+from ..editor import EditorError, edit_written_text, keep
+from ..logs import Log, by_day, create_log, format_duration, logs_between, meta_text, parse_markdown, render_markdown, replace_days
 from ..message import Parsed, parse_message
 from .buttons import flat_button
 from .dashed_rule import DashedRule
@@ -167,10 +164,6 @@ class LogsView(Vertical):
         self._show_logs()
         self.query_one(LogsScroll).scroll_home(animate=False)
 
-    def reload(self) -> None:
-        """The footer's Refresh."""
-        self.load()
-
     def set_colors(self) -> None:
         """Re-render the logs against a new palette; their colors are baked into Rich text."""
         self._show_logs()
@@ -178,7 +171,6 @@ class LogsView(Vertical):
     def _show_logs(self) -> None:
         palette = self.app.palette
         days = [day_text(day, logs, palette) for day, logs in by_day(self.logs)]
-        # A blank line between days
         self.query_one("#logs-text", Static).update(Text("\n\n").join(days))
         first, last = self.span
         week = f"Week {first.isocalendar().week}"
@@ -187,7 +179,6 @@ class LogsView(Vertical):
         empty = self.query_one("#logs-empty", Static)
         empty.update(self.app.database_error or f"No logs in {week.lower()}")
         empty.display = not self.logs
-        # Nothing after this week
         self.query_one("#btn-next-week", Button).disabled = self.page == 0
 
     # -- paging
@@ -198,7 +189,6 @@ class LogsView(Vertical):
         self.load()
 
     @on(Button.Pressed, "#btn-next-week")
-
     def action_newer(self) -> None:
         if self.page > 0:
             self.page -= 1
@@ -206,6 +196,9 @@ class LogsView(Vertical):
 
     def action_refresh(self) -> None:
         self.load()
+
+    # The footer's Refresh
+    reload = action_refresh
 
     # -- logging
 
@@ -289,14 +282,6 @@ def today() -> date:
     return date.today()
 
 
-def keep(content: str) -> str:
-    """Save content to a file that stays, and return its path."""
-    fd, path = tempfile.mkstemp(prefix="taf-edit-", suffix=".md")
-    with os.fdopen(fd, "w", encoding="utf-8") as file:
-        file.write(content)
-    return path
-
-
 def short_date(day: date) -> str:
     return f"{day:%b} {day.day}"
 
@@ -322,8 +307,7 @@ def parsed_text(parsed: Parsed, palette: dict[str, str]) -> Text:
     if parsed.duration is not None:
         text.append(" ")
         text.append(format_duration(parsed.duration), style=palette["cyan"])
-    meta = " ".join(part for part in (parsed.action and f"+{parsed.action}", parsed.context and f"@{parsed.context}") if part)
-    if meta:
+    if meta := meta_text(parsed.action, parsed.context):
         text.append(" ")
-        text.append(f"[{meta}]", style=Style(color=palette["comment"], italic=True))
+        text.append(meta, style=Style(color=palette["comment"], italic=True))
     return text

@@ -71,17 +71,18 @@ the commented-out `../tui-kit` path.
 taf/                       # git root + pyproject.toml (run uv commands here)
   taf/                     # Python package
     __init__.py         # The version and the repository's URL
-    __main__.py         # The command line: the TUI, `taf log`'s own parser, and the todo and watch commands
-    note_command.py     # `taf note` and `taf todo "text"`: write one in the shell, tags at the end on their own line; no Textual
-    todo_command.py     # `taf todo list|show|done|reopen`; no Textual
+    __main__.py         # The command line: the TUI, `taf log`'s own parser, routing to the todo, note and watch commands
+    command.py          # open_for_command and print_error, shared by the shell commands; no Textual
+    note_command.py     # Writing a note or a todo from the shell, tags at the end on their own line, and its parser; no Textual
+    todo_command.py     # `taf todo`: write a todo, or list|show|done|reopen; no Textual
     log_command.py      # `taf log`: log, view and edit in the shell, as the Ruby fini did; no Textual
     message.py          # A message's @duration, @context and +action, and the rules that infer the rest; no Textual
     app.py              # TafApp, a tui-kit BaseApp: TABS, the footer and its messages, the keys
-    config.py           # Optional ~/.config/taf/config.yml (theme, through tui_kit.config; database_path; the watch: section as written)
+    config.py           # Optional ~/.config/taf/config.yml (theme, through tui_kit.config; database_path; the watch: section, a mapping)
     database.py         # Opening the SQLite database and its migrations; no Textual
-    editor.py           # edit_text: some text in $EDITOR through a temporary file; no Textual
+    editor.py           # edit_text, edit_written_text and keep: some text in $EDITOR through a temporary file; no Textual
     notes.py            # Note (a todo is a note of the kind todo), listing and searching, saving, done and pinned, #tags; no Textual
-    logs.py             # Log, reading, creating and replacing logs, formatting a duration; no Textual
+    logs.py             # Log, reading, creating and replacing logs, formatting a duration and meta_text, the editor's markdown; no Textual
     stats.py            # The Stats tab's sums: time per day, action and month, periods, shades; no Textual
     watch/              # The watch, which was veille; no Textual:
       cli.py            #   `taf watch` and its commands
@@ -94,8 +95,10 @@ taf/                       # git root + pyproject.toml (run uv commands here)
       prompts/slack.md  #   what the triage run reads and keeps
       view.py           #   the Watch tab's list: WatchItem, grouped by project
     screens/            # TafHelpScreen: Help with the app's keys and the tab's own, as in outils
-    widgets/            # One view per tab: notes_tab.py, NotesTab and TodosTab (the list, notes_view.py, whose rows are
-                        # notes_table.py, or one note, note_detail.py, in note_markdown.py), watch_tab.py, logs_view.py and stats_view.py;
+    widgets/            # One view per tab. Notes, Todos and Watch are list_tab.py's ListTab: the list (list_view.py's ListView,
+                        # rows in notes_table.py) or one item in its place (note_detail.py, in note_markdown.py); notes_tab.py and
+                        # notes_view.py for notes and todos, watch_tab.py for watch items, collect.py the footer's Collect;
+                        # logs_view.py and stats_view.py;
                         # dashed_rule.py, the rule under the lists' count, copied from yafyaf-tui
     styles/taf.tcss     # taf's own styles, joined after tui-kit's (app.STYLE_FILES)
 ```
@@ -146,7 +149,7 @@ todo done again keeps the first time), `created_at` and `updated_at`. `tags` is 
 `#`, not glued to what precedes it, never in inline code), rewritten on every save, so the Tags
 dropdown's counts and a `#tag` in the search are SQL over `json_each`. The status is in the search, as on GitHub:
 `is:open` (the search starts with it) or `is:done` (`is:closed` too), and none for all
-(`notes.split_status`; the last one wins). The status dropdown only mirrors it: `TodosView.load`
+(`notes.split_status`; the last one wins). The status dropdown only mirrors it: `ListView.load`
 sets the dropdown from the search, and picking a status, or `f`, puts `is:open` or `is:done` first
 in the search in place of the one there, or takes it out for All. A search keeps the todos
 that have every `#tag` (SQL) and whose content, its tags left out (`notes.without_tags`), has
@@ -230,12 +233,13 @@ after Collect; it is never stored, and the heading shows alone when there is no 
 ready. Then comes a heading per project, the project with the latest activity first and "No project"
 last; inside one, pinned first,
 then the latest first (`watch.view.grouped`). It reuses `NotesTable` and `NoteDetail`: a
-`WatchItem` has what a todo has (`summary`, `content`, `pinned`, `done`, `updated_at`, which is
-when it happened), so the table and the view show it like one. The table has no cell padding of its
+`WatchItem` has what the table and the view read from a `Note` (`summary`, `content`, `tags`,
+`pinned`, `done`, `links`, `gray`, `row_key`, `date_text`), so they show it like a todo, with no
+check on its type. The table has no cell padding of its
 own: each cell carries its spaces, so a heading starts at the row's left edge, cut where the columns
 meet (`NotesTable._heading`), and a blank row (`Spacer`) comes before each heading but the first.
 The cursor skips headings and blank rows. A row starts with the item's id, as a todo's does (another
-count than the todos': `taf watch show 12`, not `taf todo show 12`; the full view says "#12 Slack"),
+count than the todos': `taf watch show 12`, not `taf todo show 12`),
 and ends with Nerd Font icons that a click opens (`WatchItem.links`, `LINK_ICONS`): where
 it comes from in blue (Slack, GitHub, or a 7 in a circle, the user's sign, for one added by hand or
 by an agent); failing CI has two, its build (Jenkins, in red) then its PR (GitHub). There is no key to
@@ -243,16 +247,17 @@ open a link. The full view writes each address out after its name (`LINK_NAMES`:
 <url>"), so it can be read and copied, and only the address is a link. Its kind is in the full view
 only, and an fyi is gray. Keys: `x` done, `p` or space pin, Enter shows it in
 full (`WatchDetail`, no Edit or Delete), `f` cycles Open, Done, All, `/` searches its words, `r`
-reloads, `y` copies; the list also reloads every minute (`RELOAD_SECONDS`), for what the timer
-adds. `c`, or the footer's cyan Collect (after Refresh, only on Watch), runs `taf watch collect` in
-its own process and session (`WatchTab.collect`), as the timer does: its lock keeps the two apart,
+reloads, `y` copies. While the tab is on show only, the list reloads every minute
+(`RELOAD_SECONDS`), for what the timer adds, and asks GitHub for the deploy count every 5; showing
+the tab reloads it. `c`, or the footer's cyan Collect (after Refresh, only on Watch), runs `taf watch collect` in
+its own process and session (`CollectControl`, `widgets/collect.py`), as the timer does: its lock keeps the two apart,
 its prints go to temporary files, not pipes, and it finishes even when taf quits first. A worker
 thread looks every second whether it ended; quitting cancels the worker, so taf exits at once rather
 than wait for the collect. The button reads "Collecting..." and is disabled until it ends; only
-a failure shows a message (its error), then the list reloads. After Collect, `#collected-at`
+a failure shows a message (its error), then the list reloads (`Collected`). After Collect, `#collected-at`
 says when the last collect ended, the timer's or the button's ("5 minutes ago",
-`view.last_collected` and `view.ago`: 5, 10, 30 seconds, then minute by minute up to the timer's 5
-minutes, `COLLECT_MINUTES`, or 10, then by 10 minutes, hours, days). It is redrawn every second and read
+`view.last_collected` and `view.ago`: 5, 10, 30 seconds, then minute by minute up to 10, then by
+10 minutes, hours, days). It is redrawn every second and read
 again every 15 seconds and after a collect; it is empty while the button's collect runs. Nothing in the TUI makes an item or changes its project: the collectors and `taf watch` do.
 Todos and watch items stay apart on purpose: todos have no project.
 
@@ -343,7 +348,7 @@ A click on a day's date (red, underlined under the mouse, an `@click` on `LogsTe
 day; `e` edits the last day with logs on show, or, with none, today in this week and the Sunday in another. A drag
 that selects text and ends on a date does not edit (`LogsText.action_edit_day` checks for a
 selection). The day opens alone in `$EDITOR` (`LogsView.edit_day`), in `taf log -e`'s markdown
-(`log_command.render_markdown`, given the day so an empty one still gets its header to write
+(`logs.render_markdown`, given the day so an empty one still gets its header to write
 under), through `editor.edit_text` inside `App.suspend` as notes
 are edited. Once the file is written (`:w`), even unchanged, the day is replaced (`parse_markdown`,
 `logs.replace_days`), so its logs are read again with the config's current rules; quitting without
@@ -404,7 +409,7 @@ message (`re.search`), else that setting's `default`. Run over the 3,098 logs of
 the port gives the same text and duration for every one; the action or context differs for 84,
 logged before the rules were last changed (`email` became `comm`).
 
-`-e` writes the days as markdown to a temporary file (`log_command.render_markdown`), each log as
+`-e` writes the days as markdown to a temporary file (`logs.render_markdown`), each log as
 it was typed:
 
 ```
@@ -412,8 +417,10 @@ it was typed:
 * 09:00 - Reviewed PR @15m
 ```
 
-then runs `$EDITOR` (`vim` if unset) on it and, whatever the editor's exit status, reads it back
-(`parse_markdown`): every day whose `# YYYY-MM-DD` header is still in the file has all its logs
+every day of the range with its header, even an empty one, and opens it through
+`editor.edit_written_text`, as the Logs tab does. An editor that exits with an error, or quitting
+without writing, saves nothing; a header for a day outside the range that already has logs saves
+nothing and keeps the file. Otherwise it reads the file back (`logs.parse_markdown`): every day whose `# YYYY-MM-DD` header is still in the file has all its logs
 deleted and replaced by the `* HH:MM - message` lines under it, parsed again with the current
 rules, in one transaction (`logs.replace_days`). Other lines are ignored, and a day whose header
 was removed keeps its logs. A log with no message (`* 11:00 -`) is kept. Times lose their
@@ -423,8 +430,9 @@ indented; `ENTRY_LIKE`), which its day would lose, saves nothing and keeps the f
 the error gives. A COMMIT that fails (a locked database) is rolled back, so no transaction stays
 open.
 
-`taf todo <message>` writes a todo, and `taf note <message>` a note (`note_command.run`, their
-own parser, `__main__.note_parser`). The `#tags` at the end of the message go on their own line
+`taf todo <message>` writes a todo, and `taf note <message>` a note (`note_command.run`, with
+`note_command.parser`; `todo_command.main` handles all of `taf todo`). The shell commands print
+the config's warnings and, on an SQLite error, one `Database Error:` line (`command.py`). The `#tags` at the end of the message go on their own line
 after a blank one (`note_command.note_content`): `taf todo "Refactor the subscriptions #rails"` stores
 `Refactor the subscriptions\n\n#rails`, so the list shows the text with `#rails` in cyan after it,
 and prints `Todo 12 created: ...` with the new id.

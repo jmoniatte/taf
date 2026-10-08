@@ -8,7 +8,7 @@ from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal
 from textual.notifications import Notification
-from textual.widgets import Button, Static, TabbedContent, TabPane, Tabs
+from textual.widgets import Button, TabbedContent, TabPane, Tabs
 from tui_kit.base_app import COPY_BINDING, HELP_BINDING, THEME_BINDING, BaseApp
 from tui_kit.header_notification import HeaderNotification
 from tui_kit.shortcuts import GENERAL
@@ -17,7 +17,7 @@ from . import REPOSITORY_URL, __version__
 from .config import Config, load_config
 from .database import open_database
 from .screens import TafHelpScreen
-from .widgets import WatchTab, LogsView, NotesTab, StatsView, TodosTab
+from .widgets import CollectControl, Collected, ListTab, LogsView, NotesTab, StatsView, TodosTab, WatchTab
 from .widgets.buttons import flat_button
 
 STYLES_DIR = Path(__file__).parent / "styles"
@@ -57,7 +57,7 @@ def load_stylesheet() -> str:
 
 
 class TafApp(BaseApp):
-    """Todos, notes and a log of the work done, one tab each."""
+    """What needs you (Watch), todos, notes, a log of the work done and its stats, one tab each."""
 
     TITLE = "Taf"
     VERSION = __version__
@@ -99,12 +99,10 @@ class TafApp(BaseApp):
         # place while it shows
         with Horizontal(id="app-footer"):
             yield flat_button("Exit", "btn-exit", classes="tinted -red")
-            # Only on a list of notes or todos and on the logs, like the Refresh under yafyaf-tui's list
+            # Only on a list of notes, todos or watch items, and on the logs, like the Refresh under
+            # yafyaf-tui's list
             yield flat_button("Refresh", "btn-refresh", classes="tinted -green")
-            # Only on Watch: runs taf watch collect now, as the timer does
-            yield flat_button("Collect", "btn-collect", classes="tinted -cyan")
-            # When the last collect ended, "5 minutes ago", kept up to date by WatchTab
-            yield Static("", id="collected-at")
+            yield CollectControl(id="collect")
             yield flat_button("Help", "btn-help")
             yield FooterMessage()
 
@@ -127,10 +125,9 @@ class TafApp(BaseApp):
         """The view of the tab on show."""
         return self.query_one("#tabs", TabbedContent).active_pane.children[0]
 
-    @on(Button.Pressed, "#btn-collect")
-    def _collect(self, event: Button.Pressed) -> None:
-        event.stop()
-        self.query_one(WatchTab).collect()
+    @on(Collected)
+    def _collected(self, event: Collected) -> None:
+        self.query_one(WatchTab).reload()
 
     @on(Button.Pressed, "#btn-refresh")
     def _refresh(self, event: Button.Pressed) -> None:
@@ -141,10 +138,9 @@ class TafApp(BaseApp):
         """Refresh shows while a list of notes, todos or watch items, or the logs, are on show."""
         view = self.active_view
         viewing = getattr(view, "viewing", None) is not None
-        listed = isinstance(view, (NotesTab, WatchTab)) and not viewing
+        listed = isinstance(view, ListTab) and not viewing
         self.query_one("#btn-refresh").display = isinstance(view, LogsView) or listed
-        self.query_one("#btn-collect").display = isinstance(view, WatchTab)
-        self.query_one("#collected-at").display = isinstance(view, WatchTab)
+        self.query_one(CollectControl).display = isinstance(view, WatchTab)
 
     def on_mount(self) -> None:
         # The view keeps focus for its keys; tabs switch by click or with tab
@@ -163,9 +159,8 @@ class TafApp(BaseApp):
     def apply_theme(self, theme_name: str) -> None:
         super().apply_theme(theme_name)
         # refresh_css only re-applies TCSS; the lists bake their colors into Rich text
-        for tab in self.query(NotesTab):
+        for tab in self.query(ListTab):
             tab.set_colors()
-        self.query_one(WatchTab).set_colors()
         self.query_one(LogsView).set_colors()
         self.query_one(StatsView).set_colors()
 

@@ -1,20 +1,18 @@
-"""`taf todo list`, `show`, `done` and `reopen`: the todos from the shell, for the user and agents;
-`taf todo "text"` itself is note_command's. No Textual."""
+"""`taf todo`: write a todo (through note_command), or list, show, close and reopen them, from
+the shell, for the user and agents. No Textual."""
 
 import argparse
-import re
 import sqlite3
 import sys
 from contextlib import closing
 from typing import TextIO
 
-from .config import Config
-from .database import open_database
-from .notes import TODO, Note, get_note, list_notes, set_done
+from . import note_command
+from .command import open_for_command, print_error
+from .config import Config, load_config
+from .notes import TODO, Note, extra_tags, get_note, heading_text, list_notes, set_done
 
 COMMANDS = ("list", "show", "done", "reopen")
-# A markdown heading's marks, left out of the line
-HEADING = re.compile(r"^#{1,6}\s+")
 
 
 def parser() -> argparse.ArgumentParser:
@@ -34,29 +32,47 @@ def parser() -> argparse.ArgumentParser:
     return p
 
 
-def main(config: Config, argv: list[str], out: TextIO = sys.stdout) -> int:
+def write_parser() -> argparse.ArgumentParser:
+    p = note_command.parser(TODO)
+    p.epilog += "\n\ntaf todo list|show|done|reopen: your todos (taf todo list --help); taf todo alone lists the open ones"
+    return p
+
+
+def main(argv: list[str], config: Config | None = None, out: TextIO = sys.stdout) -> int:
+    """taf todo: alone, the open todos; a first word in COMMANDS runs that command, anything else
+    is a todo to write (quote a todo that starts with one of them, or start it differently)."""
+    argv = argv or ["list"]
+    if argv[0] not in COMMANDS:
+        args = write_parser().parse_args(argv)
+        return note_command.run(config or load_config(), " ".join(args.message), TODO, out)
     args = parser().parse_args(argv)
-    try:
-        connection = open_database(config.database_path)
-    except (sqlite3.Error, OSError) as error:
-        print(f"Database Error: cannot open {config.database_path}: {error}", file=sys.stderr)
+    connection = open_for_command(config or load_config())
+    if connection is None:
         return 1
     with closing(connection):
-        if args.command == "list":
-            for todo in list_notes(connection, TODO, " ".join(args.words), args.status):
-                out.write(line(todo) + "\n")
-            return 0
-        if args.command == "show":
-            todo = todo_or_none(connection, args.id)
-            if todo is None:
-                return 1
-            out.write(line(todo) + "\n\n" + todo.content + "\n")
-            return 0
-        missing = [todo_id for todo_id in args.ids if todo_or_none(connection, todo_id) is None]
-        for todo_id in args.ids:
-            if todo_id not in missing:
-                set_done(connection, todo_id, args.command == "done")
-        return 1 if missing else 0
+        try:
+            return run(connection, args, out)
+        except sqlite3.Error as error:
+            print_error(f"Database Error: {error}")
+            return 1
+
+
+def run(connection: sqlite3.Connection, args: argparse.Namespace, out: TextIO) -> int:
+    if args.command == "list":
+        for todo in list_notes(connection, TODO, " ".join(args.words), args.status):
+            out.write(line(todo) + "\n")
+        return 0
+    if args.command == "show":
+        todo = todo_or_none(connection, args.id)
+        if todo is None:
+            return 1
+        out.write(line(todo) + "\n\n" + todo.content + "\n")
+        return 0
+    missing = [todo_id for todo_id in args.ids if todo_or_none(connection, todo_id) is None]
+    for todo_id in args.ids:
+        if todo_id not in missing:
+            set_done(connection, todo_id, args.command == "done")
+    return 1 if missing else 0
 
 
 def todo_or_none(connection: sqlite3.Connection, todo_id: int) -> Note | None:
@@ -69,6 +85,6 @@ def todo_or_none(connection: sqlite3.Connection, todo_id: int) -> Note | None:
 
 def line(todo: Note) -> str:
     """#12 [x] The summary #tag, with the tags not in the summary and a star when pinned."""
-    tags = " ".join(f"#{name}" for name in todo.tags if f"#{name}" not in todo.summary.lower())
-    parts = [f"#{todo.id}", "[x]" if todo.done else "[ ]", HEADING.sub("", todo.summary), tags, "★" if todo.pinned else ""]
+    tags = " ".join(f"#{name}" for name in extra_tags(todo))
+    parts = [f"#{todo.id}", "[x]" if todo.done else "[ ]", heading_text(todo.summary), tags, "★" if todo.pinned else ""]
     return " ".join(part for part in parts if part)

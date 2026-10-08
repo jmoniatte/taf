@@ -24,7 +24,7 @@
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
-   NOTES AND TODOS - YafYaf's list: search, Tags, a todo's status and New over the rows
+   LISTS - Notes, Todos and Watch, like YafYaf's: the search and the dropdowns over the rows
    ═══════════════════════════════════════════════════════════════════════ */
 
 #notes-controls,
@@ -148,7 +148,7 @@
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
-   NOTE DETAIL - one note or todo as markdown in place of the list, under its date and pin
+   DETAIL - one note, todo or watch item in place of the list: its header, then its markdown
    ═══════════════════════════════════════════════════════════════════════ */
 
 #note-detail {
@@ -381,7 +381,7 @@ TafHelpScreen #shortcuts-general {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
-   FOOTER - under every tab: Exit on the left, Help or a message on the right
+   FOOTER - under every tab: Exit, Refresh and Collect on the left, Help or a message on the right
    ═══════════════════════════════════════════════════════════════════════ */
 
 #app-footer {
@@ -393,8 +393,10 @@ TafHelpScreen #shortcuts-general {
     border-top: solid $gutter;
 }
 
-/* Neutral, like the Close button on tui-kit's panels */
+/* Neutral, like the Close button on tui-kit's panels. On the right; a message in its place while one
+   shows (FooterMessage), right-aligned over the room left of it, an error still on up to three lines */
 #btn-help {
+    dock: right;
     width: auto;
     min-width: 0;
     height: 1;
@@ -409,31 +411,28 @@ TafHelpScreen #shortcuts-general {
     background: $gutter;
 }
 
-/* Only on a list of notes or todos, or the logs (TafApp.refresh_footer) */
+/* Refresh only on a list, or the logs; Collect and when the last collect ended only on Watch
+   (TafApp.refresh_footer) */
 #btn-refresh {
     display: none;
     margin: 0 0 0 1;
 }
 
-/* Only on Watch (TafApp.refresh_footer) */
-#btn-collect {
+CollectControl {
     display: none;
+    width: auto;
+    height: 1;
+}
+
+#btn-collect {
     margin: 0 0 0 1;
 }
 
-/* After Collect, on Watch: when the last collect ended; empty while one runs */
 #collected-at {
-    display: none;
     width: auto;
     height: 1;
     margin: 0 0 0 2;
     color: $comment;
-}
-
-/* Help on the right; a message in its place while one shows (FooterMessage), right-aligned over
-   the room left of it, an error still on up to three lines */
-#btn-help {
-    dock: right;
 }
 
 FooterMessage {

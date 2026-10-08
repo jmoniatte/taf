@@ -6,7 +6,7 @@ import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .items import now
+from .items import now, project_id
 
 NAME = re.compile(r"^[a-z0-9][a-z0-9-]{1,59}$")
 
@@ -76,9 +76,8 @@ def add_project(db: sqlite3.Connection, name: str, about: str = "", channels: li
     )
     for channel in channels:
         db.execute(
-            "INSERT OR IGNORE INTO watch_project_links (project_id, kind, value) "
-            "VALUES ((SELECT id FROM watch_projects WHERE name = ?), 'channel', ?)",
-            (name, channel.lstrip("#")),
+            "INSERT OR IGNORE INTO watch_project_links (project_id, kind, value) VALUES (?, 'channel', ?)",
+            (project_id(db, name), channel.lstrip("#")),
         )
 
 
@@ -87,9 +86,8 @@ def link(db: sqlite3.Connection, name: str, kind: str, value: str) -> None:
     if get_project(db, name) is None:
         raise ProjectError(f"no project named {name}")
     db.execute(
-        "INSERT OR REPLACE INTO watch_project_links (project_id, kind, value) "
-        "VALUES ((SELECT id FROM watch_projects WHERE name = ?), ?, ?)",
-        (name, kind, value.lstrip("#") if kind == "channel" else value),
+        "INSERT OR REPLACE INTO watch_project_links (project_id, kind, value) VALUES (?, ?, ?)",
+        (project_id(db, name), kind, value.lstrip("#") if kind == "channel" else value),
     )
 
 
@@ -133,10 +131,11 @@ def set_project_status(db: sqlite3.Connection, name: str, status: str) -> None:
         raise ProjectError(f"no project named {name}")
 
 
-def linked_project(db: sqlite3.Connection, kind: str, value: str) -> str | None:
+def linked_project(db: sqlite3.Connection, kind: str, value: str, active_only: bool = False) -> str | None:
     row = db.execute(
-        "SELECT p.name FROM watch_project_links l JOIN watch_projects p ON p.id = l.project_id WHERE l.kind = ? AND l.value = ?",
-        (kind, value),
+        "SELECT p.name FROM watch_project_links l JOIN watch_projects p ON p.id = l.project_id "
+        "WHERE l.kind = ? AND l.value = ? AND (NOT ? OR p.status = 'active')",
+        (kind, value, active_only),
     ).fetchone()
     return row["name"] if row else None
 
@@ -156,14 +155,11 @@ def project_for_branch(db: sqlite3.Connection, branch: str | None) -> str | None
     """The active project linked to the branch, else the one whose name the branch contains (the longest)."""
     if not branch:
         return None
-    row = db.execute(
-        "SELECT p.name FROM watch_project_links l JOIN watch_projects p ON p.id = l.project_id "
-        "WHERE l.kind = 'branch' AND l.value = ? AND p.status = 'active'",
-        (branch,),
-    ).fetchone()
-    if row:
-        return row["name"]
-    names = [p.name for p in list_projects(db) if p.name in branch]
+    linked = linked_project(db, "branch", branch, active_only=True)
+    if linked:
+        return linked
+    # Runs in agent hooks: only the names, not list_projects' links and PRs
+    names = [row["name"] for row in db.execute("SELECT name FROM watch_projects WHERE status = 'active'") if row["name"] in branch]
     return max(names, key=len) if names else None
 
 

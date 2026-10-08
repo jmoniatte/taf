@@ -29,6 +29,10 @@ class LoadConfigTest(unittest.TestCase):
             bad_path = load_config(path)
             path.write_text("stats_show: minutes\n")
             bad_show = load_config(path)
+            path.write_text("watch: [slack]\n")
+            bad_watch = load_config(path)
+            path.write_text("watch:\n  model: sonnet\n")
+            watch = load_config(path)
         self.assertIn("'onelight' is not installed", unknown.warnings[0])
         self.assertEqual(broken.theme, "terminal")
         self.assertIn("not valid YAML", broken.warnings[0])
@@ -37,6 +41,8 @@ class LoadConfigTest(unittest.TestCase):
         self.assertIn("database_path: must be a file path", bad_path.warnings[0])
         self.assertEqual(bad_show.stats_show, "hours")
         self.assertEqual(bad_show.warnings, ["stats_show: must be hours or percentages, using hours"])
+        self.assertEqual((bad_watch.watch, bad_watch.warnings), ({}, ["watch: must be a mapping of settings, ignoring it"]))
+        self.assertEqual((watch.watch, watch.warnings), ({"model": "sonnet"}, []))
 
     def test_action_and_context_rules_keep_their_order_and_skip_bad_patterns(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

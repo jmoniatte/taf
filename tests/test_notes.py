@@ -11,10 +11,12 @@ from taf.notes import (
     Note,
     create_note,
     date_line,
+    extra_tags,
     delete_note,
     find_tags,
     front_matter,
     get_note,
+    heading_text,
     list_notes,
     long_date,
     set_done,
@@ -34,6 +36,16 @@ class TagsTest(unittest.TestCase):
         self.assertEqual(tags_of("Call #Mom about #home-repairs, not a#tag nor `#code` nor #1st; #home again"), ["mom", "home-repairs", "home"])
         self.assertEqual(find_tags("x #work"), [(2, 7, "work")])
         self.assertEqual(split_query("passport #Home  renew #2"), (["passport", "renew", "#2"], ["home"]))
+
+    def test_extra_tags_are_those_not_in_the_summary_and_a_heading_loses_its_marks(self) -> None:
+        created = datetime(2026, 9, 5, 9, 0)
+        note = Note(1, TODO, "Deploy #rails-api\n\n#rails #work", ("rails-api", "rails", "work"), False, None, created, created)
+        # #rails-api in the summary does not hide #rails
+        self.assertEqual(extra_tags(note), ("rails", "work"))
+        self.assertEqual(
+            [heading_text(summary) for summary in ("## Fix the docs ##", "# Title #tag", "#tag not a heading", "Plain")],
+            ["Fix the docs", "Title #tag", "#tag not a heading", "Plain"],
+        )
 
 
 class NotesTest(unittest.TestCase):
@@ -164,3 +176,6 @@ class DateTest(unittest.TestCase):
         self.assertEqual(date_line(note), "Created September 5, 2026 at 9:00am")
         changed = Note(1, TODO, "x", (), False, None, created, datetime(2026, 9, 6, 10, 0))
         self.assertEqual(date_line(changed), "Updated September 6, 2026 at 10:00am")
+        # What a table row and a detail view read, as from a watch item
+        done = Note(7, TODO, "x", (), False, created, created, created)
+        self.assertEqual((note.links, note.gray, done.gray, done.row_key, changed.date_text), ([], False, True, "7", date_line(changed)))
