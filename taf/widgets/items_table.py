@@ -19,8 +19,8 @@ from ..watch.view import Group, WatchItem
 ListItem = Note | WatchItem
 
 # A watch item's links, each a Nerd Font icon a click opens, before its summary: nf-md-slack,
-# nf-md-github, and nf-md-numeric_7_circle for one the user or an agent added (7 is how the user signs)
-LINK_ICONS = {"slack": "\U000f04b1", "github": "\U000f02a4", "added": "\U000f0cac"}
+# nf-md-github, and nf-md-account for one the user or an agent added
+LINK_ICONS = {"slack": "\U000f04b1", "github": "\U000f02a4", "added": "\U000f0004"}
 # Nerd Font check boxes (nf-md-checkbox_blank_outline, nf-md-checkbox_marked), as outils uses Nerd Font icons
 OPEN = "\U000f0131"
 DONE = "\U000f0132"

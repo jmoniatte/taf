@@ -242,7 +242,7 @@ meet (`ItemsTable._heading`), and a blank row (`Spacer`) comes before each headi
 The cursor skips headings and blank rows. A row starts with the item's id, as a todo's does (another
 count than the todos': `taf watch show 12`, not `taf todo show 12`),
 then, before its summary, Nerd Font icons that a click opens (`WatchItem.links`, `LINK_ICONS`): where
-it comes from in blue (Slack, GitHub, or a 7 in a circle, the user's sign, for one added by hand or
+it comes from in blue (Slack, GitHub, or a person, md-account, for one added by hand or
 by an agent); CI's is GitHub's, to the PR, its builds being in its details. CI's row is red while
 it fails and green once it passes again (`WatchItem.tone`). There is no key to
 open a link. The full view writes each address out after its name (`LINK_NAMES`: "GitHub PR:
